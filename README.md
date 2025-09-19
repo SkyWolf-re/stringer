@@ -4,13 +4,25 @@ A fast, cross-platform string extractor written in Zig. Scans memory-mapped file
 
 --- 
 
-## Why
+## Why string extraction matters in RE
 
-- Speed: mmap + branch-light detectors (SIMD later).
+Strings are the lowest-effort, highest-signal artifact that can be pulled from a binary. A fast strings pass often tells us what the program does before we ever open a disassembler.
 
-- Signal: optional UTF-16 passes and min-length keep noise low.
+### What strings reveal
 
-- Pipelines: clean text or JSON output.
+- Intent clues: error messages, feature names, log prefixes, usage/help text.
+- IO targets: file paths, registry keys, service names, IPC channels, sockets/ports.
+- Network intel: domains, URLs, API endpoints, user-agents.
+- Crypto & packers: algorithm names (AES, RC4), library banners, packer tags.
+- Locale & UX: supported languages, UI labels → hints at target platforms/users.
+- Config & toggles: env var names, flags (--debug, --safe-mode, -k).
+
+### Why it speeds up analysis
+
+- Triage: decides if a sample is worth deeper work (malware family, tool category).
+- Scoping: identifies subsystems to focus on.
+- X-refs: takes a distinctive string, then cross-reference it in the disassembler to jump straight to relevant functions.
+- De-obfuscation baseline: after unpacking or dumping process memory, compares string sets to confirm actually revealed new code/paths.
 
 ---
 
