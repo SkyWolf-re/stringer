@@ -95,15 +95,14 @@ CLI
 stringer [options] <file|->
 
 Options:
-  --min-len N         Minimum characters per hit (default 5)
-  --enc LIST          ascii,utf16le,utf16be,all  (default: ascii,utf16le)
-  --threads N|auto    Worker threads (default: 1 or auto if set)
-  --json              Emit JSON lines instead of text
-  --offset            Always print file offset (on by default in text)
-  --null-only         Require a terminator (\0 or 0x0000) before emit
-  --cap-run-bytes N   Truncate very long runs (default 4096)
-  --version           Print version and exit
-  -h, --help          Show help
+  --min-len N, -m N     Minimum characters per hit (default {d})
+  --enc LIST, -e LIST   ascii,utf16le,utf16be,all  (default: …)
+  --threads N|auto, -t  Worker threads (default: …; auto=#cpus)
+  --json, -j            Emit JSON lines
+  --null-only, -n       Require \0 / 0x0000 terminator before emit
+  --cap-run-bytes N, -c Truncate very long runs (default {d})
+  --version, -v         Print version and exit
+  --help, -h            Show help
 ```
 
 ---

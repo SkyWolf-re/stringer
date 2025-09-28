@@ -16,8 +16,8 @@
 
 const std = @import("std");
 const types = @import("types");
-const emm = @import("emit");
-const ch = @import("chunk");
+const emit = @import("emit");
+const chunk = @import("chunk");
 const io = @import("io");
 const detect_ascii = @import("detect_ascii");
 const detect_utf16 = @import("detect_utf16");
@@ -29,85 +29,182 @@ const Parsed = struct {
     path: []const u8,
 };
 
+const Opt = enum {
+    // long flags
+    min_len,
+    enc,
+    threads,
+    json,
+    null_only,
+    cap_run_bytes,
+    version,
+    help,
+    // short aliases
+    m_min_len,
+    e_enc,
+    t_threads,
+    j_json,
+    n_null_only,
+    c_cap_run_bytes,
+    v_version,
+    h_help,
+    // meta
+    positional,
+    unknown,
+};
+
+const OPTS = std.StaticStringMap(Opt).initComptime(.{
+    // long
+    .{ "--min-len", .min_len },
+    .{ "--enc", .enc },
+    .{ "--threads", .threads },
+    .{ "--json", .json },
+    .{ "--null-only", .null_only },
+    .{ "--cap-run-bytes", .cap_run_bytes },
+    .{ "--version", .version },
+    .{ "--help", .help },
+    // short
+    .{ "-m", .m_min_len },
+    .{ "-e", .e_enc },
+    .{ "-t", .t_threads },
+    .{ "-j", .j_json },
+    .{ "-n", .n_null_only },
+    .{ "-c", .c_cap_run_bytes },
+    .{ "-v", .v_version },
+    .{ "-h", .h_help },
+});
+
+fn classify(arg: []const u8) Opt {
+    if (arg.len == 0 or arg[0] != '-') return .positional;
+    return OPTS.get(arg) orelse .unknown;
+}
+
 fn printHelp() void {
+    const def = types.Config{};
+
+    //building default enc list without heap alloc
+    const first = true;
+    const enc_fmt = struct {
+        fn printList() void {
+            if (def.enc_ascii) {
+                std.debug.print("ascii", .{});
+                first = false;
+            }
+            if (def.enc_utf16le) {
+                std.debug.print(if (first) "utf16le" else ",utf16le", .{});
+                first = false;
+            }
+            if (def.enc_utf16be) {
+                std.debug.print(if (first) "utf16be" else ",utf16be", .{});
+            }
+        }
+    };
+
     std.debug.print(
         \\stringer [options] <file|->
+        \\
         \\Options:
-        \\  --min-len N         Minimum characters per hit (default 5)
-        \\  --enc LIST          ascii,utf16le,utf16be,all  (default: ascii,utf16le)
-        \\  --threads N|auto    Worker threads (default: 1; auto=#cpus)
-        \\  --json              Emit JSON lines
-        \\  --null-only         Require \\0 / 0x0000 terminator
-        \\  --cap-run-bytes N   Truncate very long runs (default 4096)
-        \\  --version           Print version and exit
-        \\  -h, --help          Show help
         \\
     , .{});
+
+    // --min-len
+    std.debug.print("  --min-len N          Minimum characters per hit (default {d})\n", .{def.min_len});
+
+    // --enc
+    std.debug.print("  --enc LIST           ascii,utf16le,utf16be,all  (default: ", .{});
+    enc_fmt.printList();
+    std.debug.print(")\n", .{});
+
+    // --threads / -t
+    std.debug.print("  --threads N|auto     Worker threads (default: {d}; auto=#cpus)\n", .{if (def.threads == 0) 1 else def.threads});
+
+    // --json / -j
+    std.debug.print("  --json, -j           Emit JSON lines\n", .{});
+
+    // --null-only / -n
+    std.debug.print("  --null-only, -n      Require \\0 / 0x0000 terminator before emit\n", .{});
+
+    // --cap-run-bytes
+    std.debug.print("  --cap-run-bytes N    Truncate very long runs (default {d})\n", .{def.cap_run_bytes});
+
+    // --help / --version
+    std.debug.print("  --version            Print version and exit\n", .{});
+    std.debug.print("  --help, -h           Show help\n\n", .{});
+}
+
+fn parseEncList(cfg: *types.Config, list: []const u8) !void {
+    cfg.enc_ascii = false;
+    cfg.enc_utf16le = false;
+    cfg.enc_utf16be = false;
+
+    var it = std.mem.splitScalar(u8, list, ',');
+    while (it.next()) |tok| {
+        if (tok.len == 0) continue;
+        if (std.mem.eql(u8, tok, "ascii")) {
+            cfg.enc_ascii = true;
+        } else if (std.mem.eql(u8, tok, "utf16le")) {
+            cfg.enc_utf16le = true;
+        } else if (std.mem.eql(u8, tok, "utf16be")) {
+            cfg.enc_utf16be = true;
+        } else if (std.mem.eql(u8, tok, "all")) {
+            cfg.enc_ascii = true;
+            cfg.enc_utf16le = true;
+            cfg.enc_utf16be = true;
+        } else return error.InvalidArgs;
+    }
 }
 
 fn parseArgs(alloc: std.mem.Allocator) !Parsed {
-    _ = alloc; // (kept for symmetry; not needed right now)
+    _ = alloc; //reserved for future use
 
     var cfg = types.Config{};
-    var path_opt: ?[]const u8 = null;
+    const path_opt: ?[]const u8 = null;
 
     var it = std.process.args();
     _ = it.next(); // skip argv0
 
-    while (it.next()) |arg| {
-        if (std.mem.eql(u8, arg, "--min-len")) {
+    while (it.next()) |arg| switch (classify(arg)) {
+        .min_len, .m_min_len => {
             const v = it.next() orelse return error.InvalidArgs;
             cfg.min_len = try std.fmt.parseUnsigned(usize, v, 10);
-        } else if (std.mem.eql(u8, arg, "--enc")) {
+        },
+        .enc, .e_enc => {
             const v = it.next() orelse return error.InvalidArgs;
-            cfg.enc_ascii = false;
-            cfg.enc_utf16le = false;
-            cfg.enc_utf16be = false;
-            var parts = std.mem.splitScalar(u8, v, ',');
-            while (parts.next()) |tok| {
-                if (std.mem.eql(u8, tok, "ascii")) cfg.enc_ascii = true else if (std.mem.eql(u8, tok, "utf16le")) cfg.enc_utf16le = true else if (std.mem.eql(u8, tok, "utf16be")) cfg.enc_utf16be = true else if (std.mem.eql(u8, tok, "all")) {
-                    cfg.enc_ascii = true;
-                    cfg.enc_utf16le = true;
-                    cfg.enc_utf16be = true;
-                } else return error.InvalidArgs;
-            }
-        } else if (std.mem.eql(u8, arg, "--threads")) {
+            try parseEncList(&cfg, v);
+        },
+        .threads, .t_threads => {
             const v = it.next() orelse return error.InvalidArgs;
-            if (std.mem.eql(u8, v, "auto")) cfg.threads = 0 else cfg.threads = try std.fmt.parseUnsigned(usize, v, 10);
-        } else if (std.mem.eql(u8, arg, "--json")) {
-            cfg.json = true;
-        } else if (std.mem.eql(u8, arg, "--null-only")) {
-            cfg.null_only = true;
-        } else if (std.mem.eql(u8, arg, "--cap-run-bytes")) {
+            cfg.threads = if (std.mem.eql(u8, v, "auto")) 0 else try std.fmt.parseUnsigned(usize, v, 10);
+        },
+        .json, .j_json => cfg.json = true,
+        .null_only, .n_null_only => cfg.null_only = true,
+        .cap_run_bytes, .c_cap_run_bytes => {
             const v = it.next() orelse return error.InvalidArgs;
             cfg.cap_run_bytes = try std.fmt.parseUnsigned(usize, v, 10);
-        } else if (std.mem.eql(u8, arg, "--version")) {
+        },
+        .version, .v_version => {
             std.debug.print("stringer 0.1.0\n", .{});
             std.process.exit(0);
-        } else if (std.mem.eql(u8, arg, "-h") or std.mem.eql(u8, arg, "--help")) {
+        },
+        .help, .h_help => {
             printHelp();
             std.process.exit(0);
-        } else if (std.mem.startsWith(u8, arg, "-")) {
-            return error.InvalidArgs;
-        } else {
-            // positional: path
-            if (path_opt != null) return error.InvalidArgs; // only one file
-            path_opt = arg;
-        }
-    }
+        },
+        .positional => {},
+        .unknown => return error.InvalidArgs,
+    };
 
-    if (path_opt == null) return error.InvalidArgs;
-
+    const path = path_opt orelse return error.InvalidArgs;
     try cfg.validate();
-    return .{ .cfg = cfg, .path = path_opt.? };
+    return .{ .cfg = cfg, .path = path };
 }
 
 //-------------------------------------Worker orchestration---------------------------------------------------------
 
 const RunCtx = struct {
     cfg: *const types.Config,
-    pr: *emm.SafePrinter,
-    w: *const ch.Work,
+    pr: *emit.SafePrinter,
+    w: *const chunk.Work,
 };
 
 fn runChunk(ctx: *RunCtx) !void {
@@ -144,10 +241,10 @@ pub fn main() !void {
     }
 
     //prepare printer
-    var printer = emm.SafePrinter.init(&cfg, std.io.getStdOut().writer().any());
+    var printer = emit.SafePrinter.init(&cfg, std.io.getStdOut().writer().any());
 
     //Plan chunks with overlap
-    const works = try ch.makeChunks(gpa, bytes.data, &cfg);
+    const works = try chunk.makeChunks(gpa, bytes.data, &cfg);
     defer gpa.free(works);
 
     //Spawn threads
