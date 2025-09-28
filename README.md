@@ -48,7 +48,7 @@ POSIX & Windows file mapping; - reads from stdin (no mmap)
 
 ## Install / Build
 ```
-# Zig 0.12.x+ recommended
+# Zig 0.15.x+ recommended
 zig build -Drelease-fast
 # binary at: zig-out/bin/stringer
 ```
@@ -134,4 +134,12 @@ Packed/obfuscated strings require dynamic memory dumps (out of scope for MVP).
 
 ## License
 
-MIT (see LICENSE).
+MIT (see LICENSE).  
+
+---
+
+## Credits
+
+Built for fast, secure reverse-engineering workflows (and to spread the Zig language)   
+Author: @skywolf-re  
+Contributions welcome!
