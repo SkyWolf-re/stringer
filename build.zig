@@ -30,7 +30,6 @@ pub fn build(b: *std.Build) void {
     mod_detect_utf16.addImport("emit", mod_emit);
     mod_detect_utf16.addImport("detect_ascii", mod_detect_ascii);
 
-    mod_chunk.addImport("types", mod_types);
     // io has no deps right now
 
     const main_mod = b.createModule(.{
@@ -52,21 +51,40 @@ pub fn build(b: *std.Build) void {
     if (b.args) |args| run_cmd.addArgs(args);
     b.step("run", "Run stringer").dependOn(&run_cmd.step);
 
+    const mod_test_helpers = b.addModule("test_helpers", .{
+        .root_source_file = .{ .cwd_relative = "test/helpers.zig" },
+    });
+
     const test_mod_utf16 = b.createModule(.{
         .root_source_file = .{ .cwd_relative = "test/test_detect_utf16.zig" },
         .target = target,
         .optimize = optimize,
     });
+
     test_mod_utf16.addImport("types", mod_types);
     test_mod_utf16.addImport("emit", mod_emit);
-    test_mod_utf16.addImport("detect_ascii", mod_detect_ascii);
-    test_mod_utf16.addImport("detect_utf16", mod_detect_utf16);
     test_mod_utf16.addImport("chunk", mod_chunk);
-    test_mod_utf16.addImport("io", mod_io);
+    test_mod_utf16.addImport("test_helpers", mod_test_helpers);
+    test_mod_utf16.addImport("detect_utf16", mod_detect_utf16);
+
+    const test_mod_ascii = b.createModule(.{
+        .root_source_file = .{ .cwd_relative = "test/test_detect_ascii.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+
+    test_mod_ascii.addImport("types", mod_types);
+    test_mod_ascii.addImport("emit", mod_emit);
+    test_mod_ascii.addImport("chunk", mod_chunk);
+    test_mod_ascii.addImport("test_helpers", mod_test_helpers);
+    test_mod_ascii.addImport("detect_ascii", mod_detect_ascii);
 
     const t_utf16 = b.addTest(.{ .root_module = test_mod_utf16 });
-    const run_tests = b.addRunArtifact(t_utf16);
+    const run_utf16 = b.addRunArtifact(t_utf16);
+    const t_ascii = b.addTest(.{ .root_module = test_mod_ascii });
+    const run_ascii = b.addRunArtifact(t_ascii);
 
-    const test_step = b.step("test", "Run unit tests");
-    test_step.dependOn(&run_tests.step);
+    const check = b.step("check", "Run unit tests");
+    check.dependOn(&run_utf16.step);
+    check.dependOn(&run_ascii.step);
 }

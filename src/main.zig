@@ -201,25 +201,31 @@ fn parseArgs(alloc: std.mem.Allocator) !Parsed {
 
 //-------------------------------------Worker orchestration---------------------------------------------------------
 
-const RunCtx = struct {
+const WorkerCtx = struct {
     cfg: *const types.Config,
     pr: *emit.SafePrinter,
-    w: *const chunk.Work,
+    buf: []const u8,
+    tiles: []const chunk.Work,
+    next: *std.atomic.Value(usize), // work-queue index
 };
 
-fn runChunk(ctx: *RunCtx) !void {
-    if (ctx.w.enc_ascii)
-        try detect_ascii.scanAscii(ctx.cfg, ctx.w.base_offset, ctx.w.core_start, ctx.w.core_end, ctx.w.buf, ctx.pr);
-    if (ctx.w.enc_utf16le)
-        try detect_utf16.scanUtf16le(ctx.cfg, ctx.w.base_offset, ctx.w.core_start, ctx.w.core_end, ctx.w.buf, ctx.pr);
-}
+fn workerLoop(wc: *WorkerCtx) void {
+    while (true) {
+        const i = wc.next.fetchAdd(1, .AcqRel);
+        if (i >= wc.tiles.len) break;
 
-//Thread entry
-fn runChunkThread(ctx: *RunCtx) void {
-    //print and exit non-zero on failure
-    runChunk(ctx) catch |e| {
-        std.debug.print("worker error: {s}\n", .{@errorName(e)});
-    };
+        const t = wc.tiles[i];
+
+        // absolute tile → slice once; core window becomes relative
+        const slice = wc.buf[t.start..t.end];
+        const core_s = t.core_start - t.start;
+        const core_e = t.core_end - t.start;
+
+        if (t.enc_ascii)
+            detect_ascii.scanAscii(wc.cfg, t.start, core_s, core_e, slice, wc.pr) catch |e| std.debug.print("worker ascii error: {s}\n", .{@errorName(e)});
+        if (t.enc_utf16le)
+            detect_utf16.scanUtf16le(wc.cfg, t.start, core_s, core_e, slice, wc.pr) catch |e| std.debug.print("worker utf16 error: {s}\n", .{@errorName(e)});
+    }
 }
 
 //--------------------------------Main--------------------------------------------
@@ -243,21 +249,32 @@ pub fn main() !void {
     //prepare printer
     var printer = emit.SafePrinter.init(&cfg, std.io.getStdOut().writer().any());
 
-    //Plan chunks with overlap
-    const works = try chunk.makeChunks(gpa, bytes.data, &cfg);
-    defer gpa.free(works);
+    //safe overlap 1 MiB default)-
+    const tiles = try chunk.makeChunks(gpa, bytes.data.len, &cfg, 1 << 20);
+    defer gpa.free(tiles);
 
-    //Spawn threads
-    var contexts = try gpa.alloc(RunCtx, works.len);
-    defer gpa.free(contexts);
+    const want_threads: usize = if (cfg.threads == 0)
+        (std.Thread.getCpuCount() catch 1)
+    else
+        cfg.threads;
 
-    var threads = try gpa.alloc(std.Thread, works.len);
-    defer gpa.free(threads);
+    const n_workers: usize = @max(@as(usize, 1), @min(want_threads, tiles.len));
 
-    for (works, 0..) |*w, i| {
-        contexts[i] = .{ .cfg = &cfg, .pr = &printer, .w = w };
-        threads[i] = try std.Thread.spawn(.{}, runChunkThread, .{&contexts[i]});
+    // Work-queue
+    var next_idx: std.atomic.Value(usize) = .{ .value = 0 };
+    var wc = WorkerCtx{ .cfg = &cfg, .pr = &printer, .buf = bytes.data, .tiles = tiles, .next = &next_idx };
+
+    if (n_workers == 1) {
+        //single-thread path (no spawn)
+        workerLoop(&wc);
+    } else {
+        var threads = try gpa.alloc(std.Thread, n_workers);
+        defer gpa.free(threads);
+
+        var i: usize = 0;
+        while (i < n_workers) : (i += 1) {
+            threads[i] = try std.Thread.spawn(.{}, workerLoop, .{&wc});
+        }
+        for (threads) |t| t.join();
     }
-
-    for (threads) |t| t.join();
 }
