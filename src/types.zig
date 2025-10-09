@@ -37,7 +37,7 @@ pub const Config = struct {
 };
 
 pub const Hit = struct {
-    offset: usize, //absolute file byte offset (NOT RVA)
+    offset: u64, //absolute file byte offset (NOT RVA)
     kind: Kind,
     chars: usize, //ASCII: bytes; UTF-16: 16-bit code units
     //text is printed by the emitter directly from a slice, so no need to store it here

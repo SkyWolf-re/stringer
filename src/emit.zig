@@ -27,7 +27,7 @@ pub const SafePrinter = struct {
     //--------------------------------JSON ---------------------------------------------------------------
 
     fn jsonEscape(out: anytype, s: []const u8) !void {
-        // Escape for JSON strings. Our data is ASCII, but handle control bytes too.
+        //Escape for JSON strings. data is ASCII, but handles control bytes too
         for (s) |b| switch (b) {
             '"' => try out.writeAll("\\\""),
             '\\' => try out.writeAll("\\\\"),
@@ -44,8 +44,8 @@ pub const SafePrinter = struct {
         };
     }
 
-    fn writeJsonLine(self: *SafePrinter, offset: usize, kind: types.Kind, chars: usize, text: []const u8) !void {
-        // Build the line in a temp buffer (no lock), then single locked write.
+    fn writeJsonLine(self: *SafePrinter, offset: u64, kind: types.Kind, chars: usize, text: []const u8) !void {
+        //building the line in a temp buffer (no lock), then single locked write
         const A = std.heap.page_allocator;
         var buf = std.ArrayList(u8).empty;
         defer buf.deinit(A);
@@ -74,12 +74,12 @@ pub const SafePrinter = struct {
         try self.writer.writeByte('\n');
     }
 
-    fn writeTextLine(self: *SafePrinter, offset: usize, kind: types.Kind, chars: usize, text: []const u8) !void {
+    fn writeTextLine(self: *SafePrinter, offset: u64, kind: types.Kind, chars: usize, text: []const u8) !void {
         const A = std.heap.page_allocator;
         var q = std.ArrayList(u8).empty;
         defer q.deinit(A);
 
-        // escape minimal set for readable text mode and cap length
+        // escaping minimal set for readable text mode and cap length
         var i: usize = 0;
         while (i < text.len and q.items.len < self.cfg.cap_run_bytes) : (i += 1) {
             const b = text[i];
@@ -108,14 +108,14 @@ pub const SafePrinter = struct {
 
     //-----------------------------------------Public emit API ----------------------------------------------------
 
-    pub fn emitAscii(self: *SafePrinter, offset: usize, chars: usize, ascii_bytes: []const u8) !void {
+    pub fn emitAscii(self: *SafePrinter, offset: u64, chars: usize, ascii_bytes: []const u8) !void {
         if (self.cfg.json)
             try self.writeJsonLine(offset, .ascii, chars, ascii_bytes)
         else
             try self.writeTextLine(offset, .ascii, chars, ascii_bytes);
     }
 
-    pub fn emitUtf16le(self: *SafePrinter, offset: usize, chars: usize, region: []const u8) !void {
+    pub fn emitUtf16le(self: *SafePrinter, offset: u64, chars: usize, region: []const u8) !void {
         //Decode ASCII-range UTF-16LE to 1-byte UTF-8
         var out = std.ArrayList(u8).empty;
         defer out.deinit(std.heap.page_allocator);
@@ -123,7 +123,7 @@ pub const SafePrinter = struct {
         var i: usize = 0;
         var emitted: usize = 0;
         while (i + 1 < region.len and emitted < chars and out.items.len < self.cfg.cap_run_bytes) : (i += 2) {
-            // detector guarantees hi==0 and printable(lo)
+            //detector guarantees hi==0 and printable(lo)
             try out.append(std.heap.page_allocator, region[i]);
             emitted += 1;
         }

@@ -79,12 +79,25 @@ pub fn build(b: *std.Build) void {
     test_mod_ascii.addImport("test_helpers", mod_test_helpers);
     test_mod_ascii.addImport("detect_ascii", mod_detect_ascii);
 
+    const test_emit = b.createModule(.{
+        .root_source_file = .{ .cwd_relative = "test/test_emit.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+
+    test_emit.addImport("types", mod_types);
+    test_emit.addImport("test_helpers", mod_test_helpers);
+    test_emit.addImport("emit", mod_emit);
+
     const t_utf16 = b.addTest(.{ .root_module = test_mod_utf16 });
     const run_utf16 = b.addRunArtifact(t_utf16);
     const t_ascii = b.addTest(.{ .root_module = test_mod_ascii });
     const run_ascii = b.addRunArtifact(t_ascii);
+    const t_emit = b.addTest(.{ .root_module = test_emit });
+    const run_emit = b.addRunArtifact(t_emit);
 
     const check = b.step("check", "Run unit tests");
     check.dependOn(&run_utf16.step);
     check.dependOn(&run_ascii.step);
+    check.dependOn(&run_emit.step);
 }
