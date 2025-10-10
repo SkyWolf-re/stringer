@@ -11,6 +11,7 @@
 //! Notes:
 //! - We build each line in a temporary buffer, then lock only for the final write
 //!   to minimize contention under multi-threaded scans
+//! - All cap logic directly under emitters to avoid misplaced truncations
 
 const std = @import("std");
 const types = @import("types");
@@ -79,9 +80,9 @@ pub const SafePrinter = struct {
         var q = std.ArrayList(u8).empty;
         defer q.deinit(A);
 
-        // escaping minimal set for readable text mode and cap length
+        // escaping minimal set for readable text mode, no cap here
         var i: usize = 0;
-        while (i < text.len and q.items.len < self.cfg.cap_run_bytes) : (i += 1) {
+        while (i < text.len) : (i += 1) {
             const b = text[i];
             switch (b) {
                 '\n' => try q.appendSlice(A, "\\n"),
@@ -103,16 +104,17 @@ pub const SafePrinter = struct {
 
         self.lock.lock();
         defer self.lock.unlock();
-        try self.writer.print("{x:0>8}  {s} len={d}  \"{s}\"\n", .{ offset, kind_s, chars, q.items });
+        try self.writer.print("{x:0>16}  {s} len={d}  \"{s}\"\n", .{ offset, kind_s, chars, q.items });
     }
 
     //-----------------------------------------Public emit API ----------------------------------------------------
 
     pub fn emitAscii(self: *SafePrinter, offset: u64, chars: usize, ascii_bytes: []const u8) !void {
+        const payload = if (ascii_bytes.len > self.cfg.cap_run_bytes) ascii_bytes[0..self.cfg.cap_run_bytes] else ascii_bytes;
         if (self.cfg.json)
-            try self.writeJsonLine(offset, .ascii, chars, ascii_bytes)
+            try self.writeJsonLine(offset, .ascii, chars, payload)
         else
-            try self.writeTextLine(offset, .ascii, chars, ascii_bytes);
+            try self.writeTextLine(offset, .ascii, chars, payload);
     }
 
     pub fn emitUtf16le(self: *SafePrinter, offset: u64, chars: usize, region: []const u8) !void {
@@ -120,12 +122,15 @@ pub const SafePrinter = struct {
         var out = std.ArrayList(u8).empty;
         defer out.deinit(std.heap.page_allocator);
 
+        const max_units = @min(chars, region.len / 2);
+
         var i: usize = 0;
         var emitted: usize = 0;
-        while (i + 1 < region.len and emitted < chars and out.items.len < self.cfg.cap_run_bytes) : (i += 2) {
+        while (i + 1 < region.len and emitted < max_units) : (i += 2) {
             //detector guarantees hi==0 and printable(lo)
             try out.append(std.heap.page_allocator, region[i]);
             emitted += 1;
+            if (out.items.len == self.cfg.cap_run_bytes) break;
         }
 
         if (self.cfg.json)
