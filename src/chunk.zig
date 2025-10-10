@@ -11,11 +11,15 @@
 //!     ASCII  : (min_len - 1) + (null_only ? 1 : 0)
 //!     UTF-16 : 2*(min_len - 1) + (null_only ? 2 : 0)
 //! - Tile size is hint-based (e.g. 1 MiB) and clamped so cores are never empty
+//! - If tile_size_hint == 0, chooseTileSize() auto-picks a tile size.
 //!
 //! Notes:
 //! - For very small inputs (or zero length), we fall back to a single chunk
 //! - Left/right edges are clamped (no usize under/overflow)
 //! - Returns only initialized tiles; no uninitialized entries are exposed
+//! - When `tile_size_hint = 0`, tile size is auto-scaled based on CPU concurrency: target ~= file_len/(workers*4),
+//!   where workers = cfg.threads or detected CPU count. The value is clamped/aligned to [64 KiB..2 MiB] and
+//!   forced to be ≥ 8xoverlap, ensuring cores remain much larger than the detector overlap
 
 const std = @import("std");
 const types = @import("types");
@@ -47,13 +51,32 @@ fn computeOverlap(cfg: *const types.Config) usize {
     return if (ov_ascii > ov_u16) ov_ascii else ov_u16;
 }
 
+// Chooses a good tile size for linear scans. Auto-scale is fancy
+pub fn chooseTileSize(file_len: usize, workers_hint: usize, ov: usize) usize {
+    const floor32k: usize = 32 * 1024;
+    const min64k: usize = 64 * 1024;
+    const max2m: usize = 2 * 1024 * 1024;
+
+    const workers = if (workers_hint == 0) 1 else workers_hint;
+
+    var target = file_len / (workers * 4 + 1);
+    if (target < min64k) target = min64k;
+    if (target > max2m) target = max2m;
+
+    const need = ov * 8;
+    if (target < need) target = need;
+
+    if (target < floor32k) target = floor32k;
+    return std.mem.alignForward(usize, target, 64 * 1024);
+}
+
 //fixed-size tiles that cover the file with safe overlap cuz chunk math was't mathing
 //Returns owned slice of Work now, no uninitialized entries
 pub fn makeChunks(
     alloc: std.mem.Allocator,
     file_len: usize,
     cfg: *const types.Config,
-    tile_size_hint: usize, // e.g. 1<<20 - 32 KiB min
+    tile_size_hint: usize, // 0 for auto
 ) ![]Work {
     var list = std.ArrayList(Work).empty;
     errdefer list.deinit(alloc);
@@ -73,7 +96,15 @@ pub fn makeChunks(
 
     const ov = computeOverlap(cfg);
     const min_tile: usize = 32 * 1024; //floor for tiny files
-    const tile = if (tile_size_hint < min_tile) min_tile else tile_size_hint;
+    var tile: usize = tile_size_hint;
+    if (tile == 0) {
+        const th = if (cfg.threads == 0)
+            (std.Thread.getCpuCount() catch 1)
+        else
+            cfg.threads;
+        tile = chooseTileSize(file_len, th, ov);
+    }
+    if (tile < min_tile) tile = min_tile;
 
     var pos: usize = 0;
     while (pos < file_len) {

@@ -1,7 +1,7 @@
 //! emit.zig
 //!
 //! Author: skywolf
-//! Date: 2025-09-27
+//! Date: 2025-09-27 | Last modified: 2025-10-10
 //!
 //! Thread-safe printers for text and JSON lines
 //! - `SafePrinter` wraps an `AnyWriter` with a mutex

@@ -216,7 +216,7 @@ fn workerLoop(wc: *WorkerCtx) void {
 
         const t = wc.tiles[i];
 
-        // absolute tile → slice once; core window becomes relative
+        // absolute tile -> slice once; core window becomes relative
         const slice = wc.buf[t.start..t.end];
         const core_s = t.core_start - t.start;
         const core_e = t.core_end - t.start;
