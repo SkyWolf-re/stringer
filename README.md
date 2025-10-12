@@ -127,9 +127,20 @@ UTF-8 validation is off by default (ASCII subset only).
 
 No section-aware fast mode (ELF/PE) yet.
 
-Packed/obfuscated strings require dynamic memory dumps (out of scope for MVP).
+Packed/obfuscated strings require dynamic memory dumps (out of scope for MVP).  
 
----
+## Roadmap (post-MVP)  
+
+- **TUI (`stringer-tui`)**: one-screen, two-pane view (matches + hex/ASCII), live `/search`, encoding/min-len toggles, export from the visible set. ANSI-only; auto-fallback to CLI when not on a TTY.  
+- **Exports**: `--format csv|jsonl|yara|sigma`  
+  - **CSV**: `offset_hex,offset_dec,length,enc,preview`  
+  - **JSONL** (stable API): `{"offset":..., "length":..., "enc":"...", "preview":"..."}`  
+  - **YARA seeds**: scaffold rules from selected strings.  
+  - **Sigma seeds** (experimental): hunting templates for log search.  
+- **CLI additions**: `--regex <expr>`, `--entropy >x.y`, `--range <start:end>`, `--limit/--skip`, `--no-color`.  
+- **Stability**: core extraction remains stable; JSONL treated as a versioned contract (additive fields only).  
+
+--- 
 
 ## License
 
