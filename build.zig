@@ -98,6 +98,14 @@ pub fn build(b: *std.Build) void {
     test_chunk.addImport("types", mod_types);
     test_chunk.addImport("chunk", mod_chunk);
 
+    const test_io = b.createModule(.{
+        .root_source_file = .{ .cwd_relative = "test/test_io.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+
+    test_io.addImport("io", mod_io);
+
     const t_utf16 = b.addTest(.{ .root_module = test_mod_utf16 });
     const run_utf16 = b.addRunArtifact(t_utf16);
     const t_ascii = b.addTest(.{ .root_module = test_mod_ascii });
@@ -106,10 +114,13 @@ pub fn build(b: *std.Build) void {
     const run_emit = b.addRunArtifact(t_emit);
     const t_chunk = b.addTest(.{ .root_module = test_chunk });
     const run_chunk = b.addRunArtifact(t_chunk);
+    const t_io = b.addTest(.{ .root_module = test_io });
+    const run_io = b.addRunArtifact(t_io);
 
     const check = b.step("check", "Run unit tests");
     check.dependOn(&run_utf16.step);
     check.dependOn(&run_ascii.step);
     check.dependOn(&run_emit.step);
     check.dependOn(&run_chunk.step);
+    check.dependOn(&run_io.step);
 }

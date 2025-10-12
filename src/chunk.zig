@@ -1,7 +1,7 @@
 //! chunk.zig
 //!
 //! Author: skywolf
-//! Date: 2025-09-28 | Last modification: 2025-09-30
+//! Date: 2025-09-28 | Last modification: 2025-10-10
 //!
 //! Slice a file buffer into work chunks with safe boundary overlap.
 //! - Ensures each chunk has a non-overlap "core" window where string-starts
