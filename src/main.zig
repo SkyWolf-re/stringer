@@ -243,7 +243,9 @@ pub fn main() !void {
 
     //prepare printer
     const stdout_file = std.fs.File.stdout();
-    const w = stdout_file.writer(gpa);
+    var buf: [64 * 1024]u8 = undefined;
+    const w = stdout_file.writer(buf[0..]); // fs.File.Writer with buffer
+
     const Printer = emit.SafePrinter(@TypeOf(w));
     var pr = Printer.init(&cfg, w);
 
