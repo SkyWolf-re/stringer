@@ -81,24 +81,7 @@ fn classify(arg: []const u8) Opt {
 
 fn printHelp() void {
     const def = types.Config{};
-
-    //building default enc list without heap alloc
-    const first = true;
-    const enc_fmt = struct {
-        fn printList() void {
-            if (def.enc_ascii) {
-                std.debug.print("ascii", .{});
-                first = false;
-            }
-            if (def.enc_utf16le) {
-                std.debug.print(if (first) "utf16le" else ",utf16le", .{});
-                first = false;
-            }
-            if (def.enc_utf16be) {
-                std.debug.print(if (first) "utf16be" else ",utf16be", .{});
-            }
-        }
-    };
+    const Item = struct { on: bool, label: []const u8 };
 
     std.debug.print(
         \\stringer [options] <file|->
@@ -112,7 +95,19 @@ fn printHelp() void {
 
     // --enc
     std.debug.print("  --enc LIST           ascii,utf16le,utf16be,all  (default: ", .{});
-    enc_fmt.printList();
+    const items = [_]Item{
+        .{ .on = def.enc_ascii, .label = "ascii" },
+        .{ .on = def.enc_utf16le, .label = "utf16le" },
+        .{ .on = def.enc_utf16be, .label = "utf16be" },
+    };
+    var first = true;
+    for (items) |it| {
+        if (!it.on) continue;
+        if (!first) std.debug.print(",", .{});
+        std.debug.print("{s}", .{it.label});
+        first = false;
+    }
+
     std.debug.print(")\n", .{});
 
     // --threads / -t
@@ -165,7 +160,7 @@ fn parseArgs(alloc: std.mem.Allocator) !Parsed {
 
     while (it.next()) |arg| switch (classify(arg)) {
         .min_len, .m_min_len => {
-            const v = it.next() orelse return error.InvalidArgs;
+            const v = it.next() orelse return error.InvalidArgs; //zig's pinnacle
             cfg.min_len = try std.fmt.parseUnsigned(usize, v, 10);
         },
         .enc, .e_enc => {
@@ -247,7 +242,10 @@ pub fn main() !void {
     }
 
     //prepare printer
-    var printer = emit.SafePrinter.init(&cfg, std.io.getStdOut().writer().any());
+    const stdout_file = std.fs.File.stdout();
+    const w = stdout_file.writer(gpa);
+    const Printer = emit.SafePrinter(@TypeOf(w));
+    var pr = Printer.init(&cfg, w);
 
     //safe overlap 1 MiB default)-
     const tiles = try chunk.makeChunks(gpa, bytes.data.len, &cfg, 1 << 20);
@@ -262,7 +260,7 @@ pub fn main() !void {
 
     // Work-queue
     var next_idx: std.atomic.Value(usize) = .{ .value = 0 };
-    var wc = WorkerCtx{ .cfg = &cfg, .pr = &printer, .buf = bytes.data, .tiles = tiles, .next = &next_idx };
+    var wc = WorkerCtx{ .cfg = &cfg, .pr = &pr, .buf = bytes.data, .tiles = tiles, .next = &next_idx };
 
     if (n_workers == 1) {
         //single-thread path (no spawn)

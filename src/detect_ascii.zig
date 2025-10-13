@@ -31,12 +31,13 @@ pub inline fn isPrintableAscii(b: u8) bool {
 /// Scan ASCII/“UTF-8-lite” runs and emit via printer.
 /// Only emit hits whose start index lies in [core_start, core_end]
 pub fn scanAscii(
+    comptime Printer: type,
     cfg: *const types.Config,
     base_offset: usize,
     core_start: usize,
     core_end: usize,
     buf: []const u8,
-    pr: *emit.SafePrinter,
+    pr: *Printer,
 ) !void {
     var i: usize = 0;
 

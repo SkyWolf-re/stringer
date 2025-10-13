@@ -10,6 +10,7 @@ pub fn build(b: *std.Build) void {
     const mod_detect_utf16 = b.addModule("detect_utf16", .{ .root_source_file = .{ .cwd_relative = "src/detect_utf16.zig" } });
     const mod_chunk = b.addModule("chunk", .{ .root_source_file = .{ .cwd_relative = "src/chunk.zig" } });
     const mod_io = b.addModule("io", .{ .root_source_file = .{ .cwd_relative = "src/io.zig" } });
+    const mod_main = b.addModule("main", .{ .root_source_file = .{ .cwd_relative = "src/main.zig" } });
 
     //lowkey annoying that we need to put each import every time
     mod_emit.addImport("types", mod_types);
@@ -106,6 +107,15 @@ pub fn build(b: *std.Build) void {
 
     test_io.addImport("io", mod_io);
 
+    const test_cli = b.createModule(.{
+        .root_source_file = .{ .cwd_relative = "test/test_cli.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+
+    test_cli.addImport("types", mod_types);
+    test_cli.addImport("main", mod_main);
+
     const t_utf16 = b.addTest(.{ .root_module = test_mod_utf16 });
     const run_utf16 = b.addRunArtifact(t_utf16);
     const t_ascii = b.addTest(.{ .root_module = test_mod_ascii });
@@ -116,6 +126,13 @@ pub fn build(b: *std.Build) void {
     const run_chunk = b.addRunArtifact(t_chunk);
     const t_io = b.addTest(.{ .root_module = test_io });
     const run_io = b.addRunArtifact(t_io);
+    const t_cli = b.addTest(.{ .root_module = test_cli });
+    const run_cli = b.addRunArtifact(t_cli);
+
+    //integration test
+    run_cli.step.dependOn(&exe.step);
+    const it_step = b.step("it-cli", "Run integration CLI tests");
+    it_step.dependOn(&run_cli.step);
 
     const check = b.step("check", "Run unit tests");
     check.dependOn(&run_utf16.step);
