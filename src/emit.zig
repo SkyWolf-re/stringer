@@ -4,7 +4,7 @@
 //! Date: 2025-09-27 | Last modified: 2025-10-15
 //!
 //! Thread-safe printers for text and JSON lines
-//! - `SafePrinter` wraps any <Writer> with a mutex
+//! - `SafePrinter` wraps any <Writer> with a mutex & pointer to a specific writer destination
 //! - ASCII emits bytes as-is (escaped for text mode)
 //! - UTF-16LE emitter decodes ASCII-range code units to 1-byte UTF-8
 //!
@@ -12,6 +12,8 @@
 //! - We build each line in a temporary buffer, then lock only for the final write
 //!   to minimize contention under multi-threaded scans
 //! - All cap logic directly under emitters to avoid misplaced truncations
+//! - Right now, the `SafePrinter`API uses a buffer `Sink` for context writing. Good for first launch, but
+//!   might tweak the approach for optimization & readability
 
 const std = @import("std");
 const types = @import("types");
@@ -21,7 +23,7 @@ pub const Sink = struct {
     ctx: *const anyopaque,
 
     // Type-erased "write all" function: must consume the full slice or error
-    writeAllFn: *const fn (ctx: *anyopaque, data: []const u8) anyerror!void,
+    writeAllFn: *const fn (ctx: *const anyopaque, data: []const u8) anyerror!void,
 
     pub const Ctx = struct {
         list: *std.ArrayList(u8),
@@ -40,9 +42,9 @@ pub const Sink = struct {
     //ArrayList<u8> adapter
     pub fn sinkArrayList(ctx: *const Ctx) Sink {
         const Impl = struct {
-            fn writeAll(pctx: *anyopaque, data: []const u8) !void {
-                var l: *std.ArrayList(u8) = @ptrCast(@alignCast(pctx));
-                try l.appendSlice(l.alloc, data);
+            fn writeAll(pctx: *const anyopaque, data: []const u8) anyerror!void {
+                const c: *const Ctx = @ptrCast(@alignCast(pctx));
+                try c.list.appendSlice(c.alloc, data);
             }
         };
         return .{ .ctx = ctx, .writeAllFn = Impl.writeAll };
