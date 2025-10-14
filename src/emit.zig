@@ -1,7 +1,7 @@
 //! emit.zig
 //!
 //! Author: skywolf
-//! Date: 2025-09-27 | Last modified: 2025-10-10
+//! Date: 2025-09-27 | Last modified: 2025-10-15
 //!
 //! Thread-safe printers for text and JSON lines
 //! - `SafePrinter` wraps any <Writer> with a mutex
@@ -16,15 +16,71 @@
 const std = @import("std");
 const types = @import("types");
 
+// Opaque pointer to the concrete target (ArrayList, File, etc.) because god fucking damn it
+pub const Sink = struct {
+    ctx: *const anyopaque,
+
+    // Type-erased "write all" function: must consume the full slice or error
+    writeAllFn: *const fn (ctx: *anyopaque, data: []const u8) anyerror!void,
+
+    pub const Ctx = struct {
+        list: *std.ArrayList(u8),
+        alloc: std.mem.Allocator,
+    };
+
+    pub fn writeAll(self: Sink, data: []const u8) !void {
+        try self.writeAllFn(self.ctx, data);
+    }
+
+    pub fn writeByte(self: *const Sink, b: u8) !void {
+        var one: [1]u8 = .{b};
+        try self.writeAll(&one);
+    }
+
+    //ArrayList<u8> adapter
+    pub fn sinkArrayList(ctx: *const Ctx) Sink {
+        const Impl = struct {
+            fn writeAll(pctx: *anyopaque, data: []const u8) !void {
+                var l: *std.ArrayList(u8) = @ptrCast(@alignCast(pctx));
+                try l.appendSlice(l.alloc, data);
+            }
+        };
+        return .{ .ctx = ctx, .writeAllFn = Impl.writeAll };
+    }
+
+    //File adapter (stdout, files); loops for short writes
+    pub fn sinkFile(file: *std.fs.File) Sink {
+        const Impl = struct {
+            fn writeAll(ctx: *anyopaque, data: []const u8) !void {
+                var f: *std.fs.File = @ptrCast(@alignCast(ctx));
+                var off: usize = 0;
+                while (off < data.len) {
+                    const n = try f.write(data[off..]);
+                    off += n;
+                }
+            }
+        };
+        return .{ .ctx = file, .writeAllFn = Impl.writeAll };
+    }
+};
+
 // C++ template ahh situation
 pub fn SafePrinter(comptime W: type) type {
     return struct {
         lock: std.Thread.Mutex = .{},
         writer: W,
         cfg: *const types.Config,
+        sink: Sink,
 
-        pub fn init(cfg: *const types.Config, writer: W) @This() {
-            return .{ .writer = writer, .cfg = cfg };
+        pub fn init(cfg: *const types.Config, writer: W, sink: Sink) @This() {
+            return .{ .writer = writer, .cfg = cfg, .sink = sink };
+        }
+
+        fn flushLine(self: *@This(), line: []const u8) !void {
+            self.lock.lock();
+            defer self.lock.unlock();
+            try self.sink.writeAll(line);
+            try self.sink.writeByte('\n');
         }
 
         //--------------------------------JSON ---------------------------------------------------------------
@@ -71,10 +127,7 @@ pub fn SafePrinter(comptime W: type) type {
             try jsonEscape(w, text);
             try w.writeAll("\"}");
 
-            self.lock.lock();
-            defer self.lock.unlock();
-            try self.writer.writeAll(buf.items);
-            try self.writer.writeByte('\n');
+            try self.flushLine(buf.items);
         }
 
         fn writeTextLine(self: *@This(), offset: u64, kind: types.Kind, chars: usize, text: []const u8) !void {

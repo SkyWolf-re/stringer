@@ -1,7 +1,7 @@
 //! main.zig
 //!
 //! Author: skywolf
-//! Date: 2025-09-28
+//! Date: 2025-09-28 | Last modified: 2025-10-14
 //!
 //! Orchestrates the string scanner CLI
 //! - Parses flags into `Config`, validates inputs
@@ -195,18 +195,18 @@ fn parseArgs(alloc: std.mem.Allocator) !Parsed {
 }
 
 //-------------------------------------Worker orchestration---------------------------------------------------------
-
-const WorkerCtx = struct {
-    cfg: *const types.Config,
-    pr: *emit.SafePrinter,
-    buf: []const u8,
-    tiles: []const chunk.Work,
-    next: *std.atomic.Value(usize), // work-queue index
-};
-
-fn workerLoop(wc: *WorkerCtx) void {
+fn WorkerCtx(comptime W: type) type {
+    return struct {
+        cfg: *const types.Config,
+        pr: *emit.SafePrinter(W),
+        buf: []const u8,
+        tiles: []const chunk.Work,
+        next: *std.atomic.Value(usize), // work-queue index
+    };
+}
+fn workerLoop(comptime W: type, wc: *WorkerCtx(W)) void {
     while (true) {
-        const i = wc.next.fetchAdd(1, .AcqRel);
+        const i = wc.next.fetchAdd(1, .acq_rel);
         if (i >= wc.tiles.len) break;
 
         const t = wc.tiles[i];
@@ -217,9 +217,9 @@ fn workerLoop(wc: *WorkerCtx) void {
         const core_e = t.core_end - t.start;
 
         if (t.enc_ascii)
-            detect_ascii.scanAscii(wc.cfg, t.start, core_s, core_e, slice, wc.pr) catch |e| std.debug.print("worker ascii error: {s}\n", .{@errorName(e)});
+            detect_ascii.scanAscii(W, wc.cfg, t.start, core_s, core_e, slice, wc.pr) catch |e| std.debug.print("worker ascii error: {s}\n", .{@errorName(e)});
         if (t.enc_utf16le)
-            detect_utf16.scanUtf16le(wc.cfg, t.start, core_s, core_e, slice, wc.pr) catch |e| std.debug.print("worker utf16 error: {s}\n", .{@errorName(e)});
+            detect_utf16.scanUtf16le(W, wc.cfg, t.start, core_s, core_e, slice, wc.pr) catch |e| std.debug.print("worker utf16 error: {s}\n", .{@errorName(e)});
     }
 }
 
@@ -261,12 +261,13 @@ pub fn main() !void {
     const n_workers: usize = @max(@as(usize, 1), @min(want_threads, tiles.len));
 
     // Work-queue
-    var next_idx: std.atomic.Value(usize) = .{ .value = 0 };
-    var wc = WorkerCtx{ .cfg = &cfg, .pr = &pr, .buf = bytes.data, .tiles = tiles, .next = &next_idx };
+    var next_idx: std.atomic.Value(usize) = .{ .raw = 0 };
+    const WC = WorkerCtx(std.fs.File.Writer);
+    var wc: WC = .{ .cfg = &cfg, .pr = &pr, .buf = bytes.data, .tiles = tiles, .next = &next_idx };
 
     if (n_workers == 1) {
         //single-thread path (no spawn)
-        workerLoop(&wc);
+        workerLoop(std.fs.File.Writer, &wc);
     } else {
         var threads = try gpa.alloc(std.Thread, n_workers);
         defer gpa.free(threads);

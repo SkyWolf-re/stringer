@@ -30,13 +30,13 @@ pub inline fn isUtf16beAscii(lo: u8, hi: u8) bool {
 /// Scan UTF-16LE runs and emit via printer
 /// Only emit hits whose start index lies in [core_start, core_end]
 pub fn scanUtf16le(
-    comptime Printer: type,
+    comptime Writer: type,
     cfg: *const types.Config,
     base_offset: usize,
     core_start: usize,
     core_end: usize,
     buf: []const u8,
-    pr: *Printer,
+    pr: *emit.SafePrinter(Writer),
 ) !void {
     var i: usize = 0;
     var chars: usize = 0;
