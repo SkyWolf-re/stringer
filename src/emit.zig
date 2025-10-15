@@ -167,8 +167,9 @@ pub fn SafePrinter(comptime W: type) type {
 
             try w.print("{x:0>16} {s} len={d} \"", .{ offset, kind_s, chars });
             try w.writeAll(q.items);
-            try w.writeByte('"');
-            try self.flushLine(q.items);
+            try w.writeAll("\"");
+            try w.writeByte('\n');
+            try self.flushLine(buf.items);
 
             //self.lock.lock();
             //defer self.lock.unlock();
