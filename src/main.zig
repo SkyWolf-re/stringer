@@ -1,7 +1,7 @@
 //! main.zig
 //!
 //! Author: skywolf
-//! Date: 2025-09-28 | Last modified: 2025-10-14
+//! Date: 2025-09-28 | Last modified: 2025-10-15
 //!
 //! Orchestrates the string scanner CLI
 //! - Parses flags into `Config`, validates inputs
@@ -247,7 +247,7 @@ pub fn main() !void {
     const w = stdout_file.writer(buf[0..]); // fs.File.Writer with buffer
 
     const Printer = emit.SafePrinter(@TypeOf(w));
-    var pr = Printer.init(&cfg, w);
+    var pr = Printer.init(&cfg, w, emit.Sink.sinkFile(&stdout_file));
 
     //safe overlap 1 MiB default)-
     const tiles = try chunk.makeChunks(gpa, bytes.data.len, &cfg, 1 << 20);
@@ -262,19 +262,24 @@ pub fn main() !void {
 
     // Work-queue
     var next_idx: std.atomic.Value(usize) = .{ .raw = 0 };
-    const WC = WorkerCtx(std.fs.File.Writer);
+    const WC = WorkerCtx(@TypeOf(w));
     var wc: WC = .{ .cfg = &cfg, .pr = &pr, .buf = bytes.data, .tiles = tiles, .next = &next_idx };
 
     if (n_workers == 1) {
         //single-thread path (no spawn)
-        workerLoop(std.fs.File.Writer, &wc);
+        workerLoop(@TypeOf(w), &wc);
     } else {
+        const Entry = struct {
+            fn run(ctx: *WC) void {
+                workerLoop(@TypeOf(w), ctx);
+            }
+        };
         var threads = try gpa.alloc(std.Thread, n_workers);
         defer gpa.free(threads);
 
         var i: usize = 0;
         while (i < n_workers) : (i += 1) {
-            threads[i] = try std.Thread.spawn(.{}, workerLoop, .{&wc});
+            threads[i] = try std.Thread.spawn(.{}, Entry.run, .{&wc});
         }
         for (threads) |t| t.join();
     }

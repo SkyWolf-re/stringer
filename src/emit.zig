@@ -12,8 +12,10 @@
 //! - We build each line in a temporary buffer, then lock only for the final write
 //!   to minimize contention under multi-threaded scans
 //! - All cap logic directly under emitters to avoid misplaced truncations
-//! - Right now, the `SafePrinter`API uses a buffer `Sink` for context writing. Good for first launch, but
-//!   might tweak the approach for optimization & readability
+//! - Output goes through a pluggable `Sink` (ctx + writeAllFn), not std.io.Writer.
+//!   This decouples emitters from OS handles and makes testing easy (ArrayList/File sink)
+//!   A sink must consume the entire slice or error. It's built the line in-memory,
+//!   taking the lock once and write via the sink.
 
 const std = @import("std");
 const types = @import("types");
@@ -51,10 +53,10 @@ pub const Sink = struct {
     }
 
     //File adapter (stdout, files); loops for short writes
-    pub fn sinkFile(file: *std.fs.File) Sink {
+    pub fn sinkFile(file: *const std.fs.File) Sink {
         const Impl = struct {
-            fn writeAll(ctx: *anyopaque, data: []const u8) !void {
-                var f: *std.fs.File = @ptrCast(@alignCast(ctx));
+            fn writeAll(ctx: *const anyopaque, data: []const u8) anyerror!void {
+                const f: *const std.fs.File = @ptrCast(@alignCast(ctx));
                 var off: usize = 0;
                 while (off < data.len) {
                     const n = try f.write(data[off..]);
@@ -153,15 +155,25 @@ pub fn SafePrinter(comptime W: type) type {
                 }
             }
 
+            var buf = std.ArrayList(u8).empty;
+            defer buf.deinit(A);
+            var w = buf.writer(A);
+
             const kind_s = switch (kind) {
                 .ascii => "ascii   ",
                 .utf16le => "utf16le ",
                 .utf16be => "utf16be ",
             };
 
-            self.lock.lock();
-            defer self.lock.unlock();
-            try self.writer.print("{x:0>16}  {s} len={d}  \"{s}\"\n", .{ offset, kind_s, chars, q.items });
+            try w.print("{x:0>16} {s} len={d} \"", .{ offset, kind_s, chars });
+            try w.writeAll(q.items);
+            try w.writeByte('"');
+            try self.flushLine(q.items);
+
+            //self.lock.lock();
+            //defer self.lock.unlock();
+            //const temp_w = std.io.Writer(@TypeOf(self.writer));
+            //try temp_w.print(&self.writer, "{x:0>16} {s} len={d} \"{s}\"\n", .{ offset, kind_s, chars, q.items });
         }
 
         //-----------------------------------------Public emit API ----------------------------------------------------
