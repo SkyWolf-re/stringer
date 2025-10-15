@@ -4,3 +4,6 @@ zig-out/**
 
 .vscode/
 .DS_Store
+
+*.sha256
+*.sha512

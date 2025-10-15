@@ -150,25 +150,37 @@ fn parseEncList(cfg: *types.Config, list: []const u8) !void {
 }
 
 fn parseArgs(alloc: std.mem.Allocator) !Parsed {
-    _ = alloc; //reserved for future use
+    //_ = alloc; //reserved for future use
 
     var cfg = types.Config{};
-    const path_opt: ?[]const u8 = null;
+    var path_opt: ?[]const u8 = null;
 
-    var it = std.process.args();
+    var it = try std.process.argsWithAllocator(alloc);
+    defer it.deinit();
     _ = it.next(); // skip argv0
 
     while (it.next()) |arg| switch (classify(arg)) {
         .min_len, .m_min_len => {
-            const v = it.next() orelse return error.InvalidArgs; //zig's pinnacle
+            const v = it.next() orelse {
+                std.debug.print("--min-len missing value\n", .{});
+                return error.InvalidArgs;
+            };
+            //const v = it.next() orelse return error.InvalidArgs; //zig's pinnacle
             cfg.min_len = try std.fmt.parseUnsigned(usize, v, 10);
         },
         .enc, .e_enc => {
-            const v = it.next() orelse return error.InvalidArgs;
+            const v = it.next() orelse {
+                std.debug.print("--enc missing value\n", .{});
+                return error.InvalidArgs;
+            };
             try parseEncList(&cfg, v);
         },
         .threads, .t_threads => {
-            const v = it.next() orelse return error.InvalidArgs;
+            const v = it.next() orelse {
+                std.debug.print("--threads missing value\n", .{});
+                return error.InvalidArgs;
+            };
+            //const v = it.next() orelse return error.InvalidArgs;
             cfg.threads = if (std.mem.eql(u8, v, "auto")) 0 else try std.fmt.parseUnsigned(usize, v, 10);
         },
         .json, .j_json => cfg.json = true,
@@ -185,12 +197,22 @@ fn parseArgs(alloc: std.mem.Allocator) !Parsed {
             printHelp();
             std.process.exit(0);
         },
-        .positional => {},
-        .unknown => return error.InvalidArgs,
+        .positional => {
+            if (path_opt != null) {
+                std.debug.print("duplicate positional: '{s}'\n", .{arg});
+                return error.InvalidArgs;
+            }
+            //if (path_opt != null) return error.InvalidArgs;
+            path_opt = arg;
+        },
+        .unknown => {
+            std.debug.print("unknown arg: '{s}'\n", .{arg});
+            return error.InvalidArgs;
+        },
     };
 
-    const path = path_opt orelse return error.InvalidArgs;
     try cfg.validate();
+    const path = path_opt orelse return error.InvalidArgs;
     return .{ .cfg = cfg, .path = path };
 }
 
@@ -227,9 +249,14 @@ fn workerLoop(comptime W: type, wc: *WorkerCtx(W)) void {
 
 pub fn main() !void {
     var gpa = std.heap.page_allocator;
+    //var it = try std.process.argsWithAllocator(gpa);
+    //defer it.deinit();
+    //var iz: usize = 0;
+    //while (it.next()) |a| : (iz += 1) std.debug.print("argv[{d}]: {s}\n", .{ iz, a });
+    //tests-only purpose
 
-    const parsed = parseArgs(gpa) catch {
-        std.debug.print("Invalid args.\n\n", .{});
+    const parsed = parseArgs(gpa) catch |e| {
+        std.debug.print("Invalid args: {s}\n\n", .{@errorName(e)});
         printHelp();
         std.process.exit(2);
     };
