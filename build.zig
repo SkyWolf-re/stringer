@@ -46,6 +46,7 @@ pub fn build(b: *std.Build) void {
     main_mod.addImport("io", mod_io);
 
     const exe = b.addExecutable(.{ .name = "stringer", .root_module = main_mod });
+    exe.root_module.link_libc = true;
     b.installArtifact(exe);
 
     const run_cmd = b.addRunArtifact(exe);

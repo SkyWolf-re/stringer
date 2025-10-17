@@ -20,6 +20,21 @@
 const std = @import("std");
 const types = @import("types");
 
+//Since zig can't handle dates for some fucking reason, all needs to be done via libc gmtime_r()
+const TM = extern struct {
+    tm_sec: c_int,
+    tm_min: c_int,
+    tm_hour: c_int,
+    tm_mday: c_int,
+    tm_mon: c_int,
+    tm_year: c_int,
+    tm_wday: c_int,
+    tm_yday: c_int,
+    tm_isdst: c_int,
+};
+
+extern fn gmtime_r(timep: *const std.c.time_t, result: *TM) ?*TM;
+
 // Opaque pointer to the concrete target (ArrayList, File, etc.) because god fucking damn it
 pub const Sink = struct {
     ctx: *const anyopaque,
@@ -75,9 +90,10 @@ pub fn SafePrinter(comptime W: type) type {
         writer: W,
         cfg: *const types.Config,
         sink: Sink,
+        json_first: std.atomic.Value(bool) = .{ .raw = true },
 
         pub fn init(cfg: *const types.Config, writer: W, sink: Sink) @This() {
-            return .{ .writer = writer, .cfg = cfg, .sink = sink };
+            return .{ .writer = writer, .cfg = cfg, .sink = sink, .json_first = .{ .raw = true } };
         }
 
         fn flushLine(self: *@This(), line: []const u8) !void {
@@ -88,6 +104,57 @@ pub fn SafePrinter(comptime W: type) type {
         }
 
         //--------------------------------JSON ---------------------------------------------------------------
+
+        //public main write-once
+        pub fn beginJson(self: *@This(), file_path: []const u8) !void {
+            self.json_first.store(true, .release);
+
+            var buf = std.ArrayList(u8).empty;
+            defer buf.deinit(std.heap.page_allocator);
+            var w = buf.writer(std.heap.page_allocator);
+
+            try w.writeAll("{\n\"header\":{\n");
+            try w.writeAll("\"tool\":\"stringer\",\n");
+            try w.writeAll("\"time\":\"");
+            try writeIso8601(w);
+            try w.writeAll("\",\n\"file\":\"");
+            try jsonEscape(w, file_path);
+            try w.writeAll("\"\n}\n\"body\":[\n");
+
+            try self.flushLine(buf.items);
+        }
+
+        //YYYY-MM-DDTHH:MM:SSZ
+        fn writeIso8601(w: anytype) !void {
+            var t: std.c.time_t = std.time.timestamp();
+            const ns = std.time.nanoTimestamp();
+            const ms = @divTrunc(@rem(ns, std.time.ns_per_s), std.time.ns_per_ms);
+
+            var tm: TM = undefined;
+            _ = gmtime_r(&t, &tm);
+            try w.print(
+                "{d:0>4}-{d:0>2}-{d:0>2}T{d:0>2}:{d:0>2}:{d:0>2}.{d:0>3}Z",
+                .{
+                    tm.tm_year + 1900,
+                    tm.tm_mon + 1,
+                    tm.tm_mday,
+                    tm.tm_hour,
+                    tm.tm_min,
+                    tm.tm_sec,
+                    ms,
+                },
+            );
+        }
+
+        fn writeJsonItem(self: *@This(), w: anytype, line: []const u8) !void {
+            const was_first = self.json_first.swap(false, .acq_rel);
+            if (!was_first) {
+                try w.writeAll(",\n");
+            }
+            //try w.writeAll(line);
+            //try w.writeByte('\n');
+            try self.flushLine(line);
+        }
 
         fn jsonEscape(out: anytype, s: []const u8) !void {
             //Escape for JSON strings. data is ASCII, but handles control bytes too
@@ -131,7 +198,7 @@ pub fn SafePrinter(comptime W: type) type {
             try jsonEscape(w, text);
             try w.writeAll("\"}");
 
-            try self.flushLine(buf.items);
+            try self.writeJsonItem(w, buf.items);
         }
 
         fn writeTextLine(self: *@This(), offset: u64, kind: types.Kind, chars: usize, text: []const u8) !void {

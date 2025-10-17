@@ -276,6 +276,11 @@ pub fn main() !void {
     const Printer = emit.SafePrinter(@TypeOf(w));
     var pr = Printer.init(&cfg, w, emit.Sink.sinkFile(&stdout_file));
 
+    //json format parsing
+    if (cfg.json) {
+        try pr.beginJson(path);
+    }
+
     //safe overlap 1 MiB default)-
     const tiles = try chunk.makeChunks(gpa, bytes.data.len, &cfg, 1 << 20);
     defer gpa.free(tiles);
@@ -309,5 +314,9 @@ pub fn main() !void {
             threads[i] = try std.Thread.spawn(.{}, Entry.run, .{&wc});
         }
         for (threads) |t| t.join();
+    }
+
+    if (cfg.json) {
+        try pr.sink.writeAll("]\n}\n");
     }
 }
