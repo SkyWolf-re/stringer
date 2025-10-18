@@ -56,22 +56,19 @@ zig build -Drelease-fast
 ## Quick start
 ```
 # Basic ASCII + UTF-16LE scan
-stringer ./a.out
+./stringer a.out
 
 # JSON output for pipelines
-stringer --json ./a.out | jq
+./stringer --json a.out | jq
 
 # Adjust minimum length
-stringer --min-len 8 ./a.out
+./stringer --min-len 8 a.out
 
 # Choose encodings (comma-separated)
-stringer --enc ascii,utf16le ./a.out
+./stringer --enc ascii,utf16le a.out
 
 # Use all cores
-stringer --threads auto ./a.out
-
-# Read from stdin
-cat blob.bin | stringer -
+./stringer --threads auto a.out
 ```
 
 ## Example output
@@ -79,16 +76,27 @@ cat blob.bin | stringer -
 Text:
 
 ```
-0001F3B0  ascii    len=12  "Invalid key"
-0002A1D8  utf16le  len=10  "Hello, UI"
+0000000000002004  ascii    len=12  "Invalid key"
+0000000000002012  utf16le  len=10  "Hello, UI"
 ```
 
 JSON:
 
 ```
-{"offset":127536,"kind":"ascii","len":12,"text":"Invalid key"}
-{"offset":172248,"kind":"utf16le","len":10,"text":"Hello, UI"}
+{
+"header":{
+"tool":"stringer",
+"time":"+2025-+10-+18T+1:+24:+32.+707Z",
+"file":"a.out"
+}
+"body":[
+{"offset":8196,"kind":"ascii","len":12,"text":"Invalid key"}
+{"offset":8210,"kind":"utf16le","len":10,"text":"Hello, UI"}
+]
+}
 ```
+
+Text mode offsets are hex; JSON uses decimal  
 
 CLI
 ```
@@ -139,8 +147,19 @@ Packed/obfuscated strings require dynamic memory dumps (out of scope for MVP).
   - **Sigma seeds** (experimental): hunting templates for log search.  
 - **CLI additions**: `--regex <expr>`, `--entropy >x.y`, `--range <start:end>`, `--limit/--skip`, `--no-color`.  
 - **Stability**: core extraction remains stable; JSONL treated as a versioned contract (additive fields only).  
+- **Performace**: Implementation of SIMD ASCII scanning and buffered output to push CPU utilization  
 
 --- 
+
+## Performance
+
+### Testing environment  
+
+- **Host:** 2 vCPUs (KVM VM) - Debian 12  
+- **Input:** 100 MB file in RAM
+- **Cmds:** ASCII only, `--min-len 15`, output redirected to `/dev/null`
+
+![performance](docs/images/perf_comparison.png)
 
 ## License
 
