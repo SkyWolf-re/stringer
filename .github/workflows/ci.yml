@@ -33,6 +33,13 @@ jobs:
 
       - name: Unit tests
         run: zig build check
+
+      - name: Install artifact
+        run: zig build install
+
+      - name: Ensure executable bit
+        if: runner.os == 'Linux'
+        run: chmod +x zig-out/bin/stringer
       
       - name: Integration test
         run: zig build it-cli
