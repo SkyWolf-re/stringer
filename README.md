@@ -1,6 +1,13 @@
+[![Latest release](https://img.shields.io/github/v/release/Skywolf-re/stringer?sort=semver)](https://github.com/Skywolf-re/stringer/releases)
 # stringer
 
 A fast, cross-platform string extractor written in Zig. Scans memory-mapped files for ASCII/UTF-8 (ASCII subset) and UTF-16 (LE/BE) strings with multi-threaded chunking and deterministic output.
+
+| Linux x86_64 (glibc) | [stringer-1.0.0-x86_64-linux-gnu.tar.gz](https://github.com/Skywolf-re/stringer/releases/latest/download/stringer-1.0.0-x86_64-linux-gnu.tar.gz) |
+| Linux x86_64 (musl)  | [stringer-1.0.0-x86_64-linux-musl.tar.gz](https://github.com/Skywolf-re/stringer/releases/latest/download/stringer-1.0.0-x86_64-linux-musl.tar.gz) |
+| Linux aarch64 (musl) | [stringer-1.0.0-aarch64-linux-musl.tar.gz](https://github.com/Skywolf-re/stringer/releases/latest/download/stringer-1.0.0-aarch64-linux-musl.tar.gz) |
+| macOS arm64          | [stringer-1.0.0-aarch64-macos.tar.gz](https://github.com/Skywolf-re/stringer/releases/latest/download/stringer-1.0.0-aarch64-macos.tar.gz) |
+| macOS x86_64         | [stringer-1.0.0-x86_64-macos.tar.gz](https://github.com/Skywolf-re/stringer/releases/latest/download/stringer-1.0.0-x86_64-macos.tar.gz) |
 
 --- 
 
