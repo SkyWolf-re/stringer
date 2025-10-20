@@ -1,0 +1,108 @@
+name: release
+on:
+  push:
+    tags: ["v*"]
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Linux
+          - os: ubuntu-latest
+            target: x86_64-linux-gnu
+            pack: tar
+          - os: ubuntu-latest
+            target: x86_64-linux-musl
+            pack: tar
+          - os: ubuntu-latest
+            target: aarch64-linux-musl
+            pack: tar
+          # macOS
+          - os: macos-latest
+            target: aarch64-macos
+            pack: tar
+          - os: macos-13
+            target: x86_64-macos
+            pack: tar
+            # Windows
+          - os: windows-latest
+            target: x86_64-windows
+            pack: zip
+
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Zig 0.15.1
+        uses: goto-bus-stop/setup-zig@v2
+        with: { version: 0.15.1 }
+
+      - name: Cache Zig caches
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/zig
+            zig-cache
+            zig-out
+          key: ${{ runner.os }}-zig-0.15.1-${{ hashFiles('build.zig', 'build.zig.zon', 'src/**/*.zig') }}
+
+      - name: Build (Release)
+        shell: bash
+        run: |
+          VER=${GITHUB_REF_NAME#v}
+          zig build -Doptimize=ReleaseFast -Dstrip=true -Dcpu=baseline -Dtarget=${{ matrix.target }} -Dversion=$VER
+
+      - name: Package artifact
+        shell: bash
+        run: |
+          VER=${GITHUB_REF_NAME#v}
+          OUT=stringer-$VER-${{ matrix.target }}
+          if [[ "${{ matrix.target }}" == *"windows"* ]]; then
+            cp zig-out/bin/stringer.exe "$OUT"/
+          else
+            cp zig-out/bin/stringer "$OUT"/
+          fi
+          cp README.md LICENSE "$OUT"/ 2>/dev/null || true
+          if [ "${{ matrix.pack }}" = "zip" ]; then
+            (cd "$OUT" && zip -r "../$OUT.zip" .)
+            echo "$OUT.zip" >> artifact_list.txt
+          else
+            tar -czf "$OUT".tar.gz "$OUT"
+            echo "$OUT.tar.gz" >> artifact_list.txt
+          fi
+
+      - name: Upload per-target artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: |
+            *.tar.gz
+            *.zip
+          if-no-files-found: error
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist
+
+      - name: Generate SHA256SUMS.txt
+        working-directory: dist
+        run: |
+          shopt -s nullglob
+          sha256sum *.tar.gz *.zip > SHA256SUMS.txt
+
+      - name: Create GitHub Release (attach assets)
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/*.tar.gz
+            dist/*.zip
+            dist/SHA256SUMS.txt
+          draft: false
+          prerelease: false

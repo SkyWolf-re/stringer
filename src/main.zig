@@ -190,7 +190,7 @@ fn parseArgs(alloc: std.mem.Allocator) !Parsed {
             cfg.cap_run_bytes = try std.fmt.parseUnsigned(usize, v, 10);
         },
         .version, .v_version => {
-            std.debug.print("stringer 0.1.0\n", .{});
+            std.debug.print("stringer 1.0.0\n", .{});
             std.process.exit(0);
         },
         .help, .h_help => {

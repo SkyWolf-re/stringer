@@ -45,8 +45,15 @@ pub fn build(b: *std.Build) void {
     main_mod.addImport("chunk", mod_chunk);
     main_mod.addImport("io", mod_io);
 
+    const strip = b.option(bool, "strip", "Strip debug info") orelse false;
+    const version = b.option([]const u8, "version", "Semver for --version") orelse "dev";
+
     const exe = b.addExecutable(.{ .name = "stringer", .root_module = main_mod });
     exe.root_module.link_libc = true;
+    exe.root_module.strip = strip;
+    const opts = b.addOptions();
+    opts.addOption([]const u8, "version", version);
+    exe.root_module.addOptions("build_options", opts);
     b.installArtifact(exe);
 
     const run_cmd = b.addRunArtifact(exe);

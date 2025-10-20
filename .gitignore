@@ -1,9 +1,23 @@
-test/** 
 .zig-cache/**
 zig-out/**  
+
+test/samples/100mb.bin
 
 .vscode/
 .DS_Store
 
-*.sha256
-*.sha512
+dist/**
+*.tar.gz
+*.zip
+SHA256SUMS.txt
+SBOM.json
+
+*.log
+*.tmp
+*.profraw
+*.profdata
+lcov.info
+
+*~
+*.swp
+*.swo
