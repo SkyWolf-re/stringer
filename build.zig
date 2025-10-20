@@ -54,7 +54,8 @@ pub fn build(b: *std.Build) void {
     const opts = b.addOptions();
     opts.addOption([]const u8, "version", version);
     exe.root_module.addOptions("build_options", opts);
-    b.installArtifact(exe);
+    const install = b.addInstallArtifact(exe, .{});
+    b.getInstallStep().dependOn(&install.step);
 
     const run_cmd = b.addRunArtifact(exe);
     if (b.args) |args| run_cmd.addArgs(args);
@@ -124,6 +125,12 @@ pub fn build(b: *std.Build) void {
     test_cli.addImport("types", mod_types);
     test_cli.addImport("main", mod_main);
 
+    const bin_name = exe.out_filename; // handles .exe on Windows
+    const installed_path = b.getInstallPath(.bin, bin_name);
+    const it_opts = b.addOptions();
+    it_opts.addOption([]const u8, "stringer_bin", installed_path);
+    test_cli.addOptions("build_options", it_opts);
+
     const t_utf16 = b.addTest(.{ .root_module = test_mod_utf16 });
     const run_utf16 = b.addRunArtifact(t_utf16);
     const t_ascii = b.addTest(.{ .root_module = test_mod_ascii });
@@ -137,8 +144,6 @@ pub fn build(b: *std.Build) void {
     const t_cli = b.addTest(.{ .root_module = test_cli });
     const run_cli = b.addRunArtifact(t_cli);
 
-    //integration test
-    run_cli.step.dependOn(&exe.step);
     const it_step = b.step("it-cli", "Run integration CLI tests");
     it_step.dependOn(&run_cli.step);
 
@@ -148,4 +153,6 @@ pub fn build(b: *std.Build) void {
     check.dependOn(&run_emit.step);
     check.dependOn(&run_chunk.step);
     check.dependOn(&run_io.step);
+
+    b.installArtifact(exe);
 }

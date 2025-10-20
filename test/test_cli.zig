@@ -1,4 +1,5 @@
 const std = @import("std");
+const build_options = @import("build_options");
 
 //Optional: embed a C source sample
 const sample_c_src: []const u8 = @embedFile("samples/a.out");
@@ -86,16 +87,12 @@ test "CLI: scan a real C source and a NUL-terminated binary" {
     const src_bytes = try std.fs.cwd().readFileAlloc(gpa, src_rel, 1 << 20);
     defer gpa.free(src_bytes);
 
-    // Materialize it inside the temp dir
     try tmp.dir.writeFile(.{ .sub_path = "a.out", .data = src_bytes });
 
-    // Build absolute path to the file in tmp (used by your CLI)
     const src_path = try std.fs.path.join(gpa, &.{ base, "a.out" });
     defer gpa.free(src_path);
 
-    // Now run your tool with src_path...
-    const exe_path = try std.fs.realpathAlloc(gpa, "zig-out/bin/stringer");
-    defer gpa.free(exe_path);
+    const exe_path: []const u8 = build_options.stringer_bin;
 
     std.debug.print("exe_path = {s}\n", .{exe_path});
     const res = try runStringer(gpa, exe_path, &.{ "--json", "--min-len", "5", "--enc", "ascii", src_path });
