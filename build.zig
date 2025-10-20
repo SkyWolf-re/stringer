@@ -57,6 +57,8 @@ pub fn build(b: *std.Build) void {
     const install = b.addInstallArtifact(exe, .{});
     b.getInstallStep().dependOn(&install.step);
 
+    const installed_path = b.getInstallPath(.bin, exe.out_filename);
+
     const run_cmd = b.addRunArtifact(exe);
     if (b.args) |args| run_cmd.addArgs(args);
     b.step("run", "Run stringer").dependOn(&run_cmd.step);
@@ -125,8 +127,6 @@ pub fn build(b: *std.Build) void {
     test_cli.addImport("types", mod_types);
     test_cli.addImport("main", mod_main);
 
-    const bin_name = exe.out_filename; // handles .exe on Windows
-    const installed_path = b.getInstallPath(.bin, bin_name);
     const it_opts = b.addOptions();
     it_opts.addOption([]const u8, "stringer_bin", installed_path);
     test_cli.addOptions("build_options", it_opts);

@@ -41,6 +41,10 @@ fn runStringer(
     // child.cwd = tmp_dir_path;
 
     try child.spawn();
+    child.spawn() catch |err| {
+        std.debug.print("spawn error: {s}\nexe_path={s}\n", .{ @errorName(err), exe_path });
+        return err;
+    };
 
     const out = try child.stdout.?.readToEndAlloc(alloc, 10 * 1024 * 1024);
     errdefer alloc.free(out);

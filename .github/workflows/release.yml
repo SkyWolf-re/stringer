@@ -26,10 +26,6 @@ jobs:
           - os: macos-13
             target: x86_64-macos
             pack: tar
-            # Windows
-          - os: windows-latest
-            target: x86_64-windows
-            pack: zip
 
     runs-on: ${{ matrix.os }}
     steps:
@@ -59,19 +55,10 @@ jobs:
         run: |
           VER=${GITHUB_REF_NAME#v}
           OUT=stringer-$VER-${{ matrix.target }}
-          if [[ "${{ matrix.target }}" == *"windows"* ]]; then
-            cp zig-out/bin/stringer.exe "$OUT"/
-          else
-            cp zig-out/bin/stringer "$OUT"/
-          fi
+          cp zig-out/bin/stringer "$OUT"/
           cp README.md LICENSE "$OUT"/ 2>/dev/null || true
-          if [ "${{ matrix.pack }}" = "zip" ]; then
-            (cd "$OUT" && zip -r "../$OUT.zip" .)
-            echo "$OUT.zip" >> artifact_list.txt
-          else
-            tar -czf "$OUT".tar.gz "$OUT"
-            echo "$OUT.tar.gz" >> artifact_list.txt
-          fi
+          tar -czf "$OUT".tar.gz "$OUT"
+          echo "$OUT.tar.gz" >> artifact_list.txt
 
       - name: Upload per-target artifact
         uses: actions/upload-artifact@v4
@@ -95,14 +82,13 @@ jobs:
         working-directory: dist
         run: |
           shopt -s nullglob
-          sha256sum *.tar.gz *.zip > SHA256SUMS.txt
+          sha256sum *.tar.gz > SHA256SUMS.txt
 
       - name: Create GitHub Release (attach assets)
         uses: softprops/action-gh-release@v2
         with:
           files: |
             dist/*.tar.gz
-            dist/*.zip
             dist/SHA256SUMS.txt
           draft: false
           prerelease: false
