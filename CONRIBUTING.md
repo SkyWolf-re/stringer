@@ -62,9 +62,3 @@ By contributing you agree your code is under this repo’s LICENSE.
 ```
 Signed-off-by: SkyWolf-re
 ```
-
-## Release notes
-
-Maintainers curate the changelog. If your change is user‑visible, propose a one‑liner under **Unreleased** in `CHANGELOG.md`.
-
-Thanks for keeping it lightweight and sharp.

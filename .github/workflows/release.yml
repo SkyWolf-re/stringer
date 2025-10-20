@@ -1,3 +1,6 @@
+permissions:
+  contents: write
+
 name: release
 on:
   push:
@@ -53,8 +56,11 @@ jobs:
       - name: Package artifact
         shell: bash
         run: |
+          set -euxo pipefail
           VER=${GITHUB_REF_NAME#v}
           OUT=stringer-$VER-${{ matrix.target }}
+          rm -rf "$OUT"
+          mkdir -p "$OUT"
           cp zig-out/bin/stringer "$OUT"/
           cp README.md LICENSE "$OUT"/ 2>/dev/null || true
           tar -czf "$OUT".tar.gz "$OUT"
@@ -63,7 +69,7 @@ jobs:
       - name: Upload per-target artifact
         uses: actions/upload-artifact@v4
         with:
-          name: dist
+          name: dist-${{ matrix.target }}
           path: |
             *.tar.gz
             *.zip
@@ -75,7 +81,8 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          name: dist
+          pattern: dist*
+          merge-multiple: true 
           path: dist
 
       - name: Generate SHA256SUMS.txt
@@ -84,7 +91,7 @@ jobs:
           shopt -s nullglob
           sha256sum *.tar.gz > SHA256SUMS.txt
 
-      - name: Create GitHub Release (attach assets)
+      - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           files: |
