@@ -1,4 +1,5 @@
 [![Latest release](https://img.shields.io/github/v/release/Skywolf-re/stringer?sort=semver)](https://github.com/Skywolf-re/stringer/releases)
+[![Downloads](https://img.shields.io/github/downloads/SkyWolf-re/stringer/total.svg)](https://github.com/SkyWolf-re/stringer/releases)
 # stringer
 
 A fast, cross-platform string extractor written in Zig. Scans memory-mapped files for ASCII/UTF-8 (ASCII subset) and UTF-16 (LE/BE) strings with multi-threaded chunking and deterministic output.
