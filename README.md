@@ -119,6 +119,7 @@ Options:
   --json, -j            Emit JSON lines
   --null-only, -n       Require \0 / 0x0000 terminator before emit
   --cap-run-bytes N, -c Truncate very long runs (default {d})
+  --find, -f (xN)       Find the exact string match. Can be repeated
   --version, -v         Print version and exit
   --help, -h            Show help
 ```

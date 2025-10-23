@@ -320,3 +320,29 @@ test "emitUtf16le(text): prefix hex parses back to original u64 offset" {
     const got = try std.fmt.parseInt(u64, hex, 16);
     try std.testing.expectEqual(off, got);
 }
+
+test "printer filters with -f semantics" {
+    var cfg: types.Config = .{};
+
+    const A = std.heap.page_allocator;
+    try cfg.addFindPattern(A, "admin");
+    try cfg.addFindPattern(A, "token");
+    defer cfg.deinit(A);
+
+    var out = std.ArrayList(u8).empty;
+    defer out.deinit(A);
+
+    const w = out.writer(A);
+    const Printer = emit.SafePrinter(@TypeOf(w));
+    const ctx = emit.Sink.Ctx{ .list = &out, .alloc = A };
+    var pr = Printer.init(&cfg, w, emit.Sink.sinkArrayList(&ctx));
+
+    try pr.emitAscii(0, 13, "password=123"); // filtered out
+    try pr.emitAscii(0, 12, "bearer token"); // passes
+    try pr.emitAscii(0, 5, "admin"); // passes
+
+    const s = out.items;
+    try std.testing.expect(std.mem.indexOf(u8, s, "password=123") == null);
+    try std.testing.expect(std.mem.indexOf(u8, s, "bearer token") != null);
+    try std.testing.expect(std.mem.indexOf(u8, s, "admin") != null);
+}

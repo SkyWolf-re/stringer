@@ -1,12 +1,13 @@
 //! emit.zig
 //!
 //! Author: skywolf
-//! Date: 2025-09-27 | Last modified: 2025-10-15
+//! Date: 2025-09-27 | Last modified: 2025-10-23
 //!
 //! Thread-safe printers for text and JSON lines
 //! - `SafePrinter` wraps any <Writer> with a mutex & pointer to a specific writer destination
 //! - ASCII emits bytes as-is (escaped for text mode)
 //! - UTF-16LE emitter decodes ASCII-range code units to 1-byte UTF-8
+//! - if `find` option is set, SafePrinter will only write the specific string based on `pass` function condition
 //!
 //! Notes:
 //! - We build each line in a temporary buffer, then lock only for the final write
@@ -96,6 +97,17 @@ pub fn SafePrinter(comptime W: type) type {
             return .{ .writer = writer, .cfg = cfg, .sink = sink, .json_first = .{ .raw = true } };
         }
 
+        fn pass(self: *const @This(), text: []const u8) bool {
+            const pats = self.cfg.find;
+            if (pats.len == 0) return true; // no -f -> passthrough
+            // substring OR over patterns
+            for (pats) |p| {
+                if (p.len == 0) return true;
+                if (std.mem.indexOf(u8, text, p) != null) return true;
+            }
+            return false;
+        }
+
         fn flushLine(self: *@This(), line: []const u8) !void {
             self.lock.lock();
             defer self.lock.unlock();
@@ -175,6 +187,7 @@ pub fn SafePrinter(comptime W: type) type {
         }
 
         fn writeJsonLine(self: *@This(), offset: u64, kind: types.Kind, chars: usize, text: []const u8) !void {
+            if (!self.pass(text)) return;
             //building the line in a temp buffer (no lock), then single locked write
             const A = std.heap.page_allocator;
             var buf = std.ArrayList(u8).empty;
@@ -202,6 +215,7 @@ pub fn SafePrinter(comptime W: type) type {
         }
 
         fn writeTextLine(self: *@This(), offset: u64, kind: types.Kind, chars: usize, text: []const u8) !void {
+            if (!self.pass(text)) return;
             const A = std.heap.page_allocator;
             var q = std.ArrayList(u8).empty;
             defer q.deinit(A);
