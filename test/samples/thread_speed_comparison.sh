@@ -9,11 +9,11 @@ printf '\n'
 cp 100mb.bin /dev/shm/100mb.bin
 for t in 1 2; do
   echo -n "$t threads (text): "
-  time ../../zig-out/bin/stringer --min-len 15 --enc ascii --threads "$t" /dev/shm/100mb.bin >/dev/null
+  time ../../zig-out/bin/stringer -f blablabla -f aaaaa -f bite -f bdbf -f rdr -f dtbd -f av --min-len 15 --enc ascii --threads "$t" /dev/shm/100mb.bin >/dev/null
 done
 for t in 1 2; do
   echo -n "$t threads (JSON): "
-  time ../../zig-out/bin/stringer --json --min-len 15 --enc ascii --threads "$t" /dev/shm/100mb.bin >/dev/null
+  time ../../zig-out/bin/stringer -f blablabla -f aaaaa -f bite -f bdbf -f rdr -f dtbd -f av --json --min-len 15 --enc ascii --threads "$t" /dev/shm/100mb.bin >/dev/null
 done
 echo -n "    strings      :"
 time strings -n 15 /dev/shm/100mb.bin >/dev/null

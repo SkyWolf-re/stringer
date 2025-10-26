@@ -1,13 +1,14 @@
 //! main.zig
 //!
 //! Author: skywolf
-//! Date: 2025-09-28 | Last modified: 2025-10-15
+//! Date: 2025-09-28 | Last modified: 2025-10-23
 //!
 //! Orchestrates the string scanner CLI
 //! - Parses flags into `Config`, validates inputs
 //! - Plans chunks with overlap and spawns workers
 //! - Runs ASCII and UTF-16LE detectors per chunk
 //! - Emits text or JSON lines via a thread-safe printer
+//! - If multiple `find` argc pass, printer passes multiple string to SafePrinter
 //!
 //! Notes:
 //! - Offsets are absolute *file byte* offsets (not RVA/VA)
@@ -37,6 +38,7 @@ const Opt = enum {
     json,
     null_only,
     cap_run_bytes,
+    find,
     version,
     help,
     // short aliases
@@ -46,6 +48,7 @@ const Opt = enum {
     j_json,
     n_null_only,
     c_cap_run_bytes,
+    f_find,
     v_version,
     h_help,
     // meta
@@ -61,6 +64,7 @@ const OPTS = std.StaticStringMap(Opt).initComptime(.{
     .{ "--json", .json },
     .{ "--null-only", .null_only },
     .{ "--cap-run-bytes", .cap_run_bytes },
+    .{ "--find", .find },
     .{ "--version", .version },
     .{ "--help", .help },
     // short
@@ -70,6 +74,7 @@ const OPTS = std.StaticStringMap(Opt).initComptime(.{
     .{ "-j", .j_json },
     .{ "-n", .n_null_only },
     .{ "-c", .c_cap_run_bytes },
+    .{ "-f", .f_find },
     .{ "-v", .v_version },
     .{ "-h", .h_help },
 });
@@ -121,6 +126,9 @@ fn printHelp() void {
 
     // --cap-run-bytes
     std.debug.print("  --cap-run-bytes N    Truncate very long runs (default {d})\n", .{def.cap_run_bytes});
+
+    // --find / -f
+    std.debug.print("  --find, -f 'str'     Find the exact string match. Can be repeated as OR\n", .{});
 
     // --help / --version
     std.debug.print("  --version            Print version and exit\n", .{});
@@ -189,8 +197,12 @@ fn parseArgs(alloc: std.mem.Allocator) !Parsed {
             const v = it.next() orelse return error.InvalidArgs;
             cfg.cap_run_bytes = try std.fmt.parseUnsigned(usize, v, 10);
         },
+        .find, .f_find => {
+            const v = it.next() orelse return error.MissingFindPattern;
+            try cfg.addFindPattern(alloc, v); // owns a copy in cfg’s arena
+        },
         .version, .v_version => {
-            std.debug.print("stringer 1.0.0\n", .{});
+            std.debug.print("stringer 1.1.0\n", .{});
             std.process.exit(0);
         },
         .help, .h_help => {
@@ -214,6 +226,36 @@ fn parseArgs(alloc: std.mem.Allocator) !Parsed {
     try cfg.validate();
     const path = path_opt orelse return error.InvalidArgs;
     return .{ .cfg = cfg, .path = path };
+}
+
+fn parseFindArgs(
+    alloc: std.mem.Allocator,
+    argv: [][]const u8,
+) !types.FindConfig {
+    var patterns = std.ArrayList([]const u8).init(alloc);
+    errdefer patterns.deinit();
+
+    var i: usize = 1; // skip argv[0]
+    while (i < argv.len) : (i += 1) {
+        const a = argv[i];
+        if (std.mem.eql(u8, a, "-f") or std.mem.eql(u8, a, "--find")) {
+            if (i + 1 >= argv.len) return error.MissingFindPattern;
+            try patterns.append(argv[i + 1]);
+            i += 1;
+        }
+        // else: ignore;
+    }
+
+    return .{ .patterns = try patterns.toOwnedSlice() };
+}
+
+// Simple OR-matcher (substring)
+fn matchAny(hay: []const u8, pats: [][]const u8) bool {
+    if (pats.len == 0) return true; // no -f -> passthrough
+    for (pats) |p| {
+        if (p.len == 0 or std.mem.indexOf(u8, hay, p) != null) return true;
+    }
+    return false;
 }
 
 //-------------------------------------Worker orchestration---------------------------------------------------------
