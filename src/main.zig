@@ -128,7 +128,7 @@ fn printHelp() void {
     std.debug.print("  --cap-run-bytes N    Truncate very long runs (default {d})\n", .{def.cap_run_bytes});
 
     // --find / -f
-    std.debug.print("  --find, -f 'str'    Find the exact string match. Can be repeated as OR\n", .{});
+    std.debug.print("  --find, -f 'str'     Find the exact string match. Can be repeated as OR\n", .{});
 
     // --help / --version
     std.debug.print("  --version            Print version and exit\n", .{});
