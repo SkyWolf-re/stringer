@@ -337,12 +337,80 @@ test "printer filters with -f semantics" {
     const ctx = emit.Sink.Ctx{ .list = &out, .alloc = A };
     var pr = Printer.init(&cfg, w, emit.Sink.sinkArrayList(&ctx));
 
-    try pr.emitAscii(0, 13, "password=123"); // filtered out
-    try pr.emitAscii(0, 12, "bearer token"); // passes
-    try pr.emitAscii(0, 5, "admin"); // passes
+    try pr.emitAscii(0, 13, "password=123"); //filtered out
+    try pr.emitAscii(0, 12, "bearer token"); //pass
+    try pr.emitAscii(0, 5, "admin"); //pass
 
     const s = out.items;
     try std.testing.expect(std.mem.indexOf(u8, s, "password=123") == null);
     try std.testing.expect(std.mem.indexOf(u8, s, "bearer token") != null);
     try std.testing.expect(std.mem.indexOf(u8, s, "admin") != null);
+}
+
+test "--find: OR semantics with multiple patterns" {
+    const A = std.heap.page_allocator;
+    var cfg: types.Config = .{};
+    try cfg.addFindPattern(A, "admin");
+    try cfg.addFindPattern(A, "token");
+    defer cfg.deinit(A);
+
+    var out = std.ArrayList(u8).empty;
+    defer out.deinit(A);
+
+    const w = out.writer(A);
+    const Printer = emit.SafePrinter(@TypeOf(w));
+    const ctx = emit.Sink.Ctx{ .list = &out, .alloc = A };
+    var pr = Printer.init(&cfg, w, emit.Sink.sinkArrayList(&ctx));
+
+    try pr.emitAscii(0, 13, "password=123");
+    try pr.emitAscii(0, 12, "bearer token");
+    try pr.emitAscii(0, 5, "admin");
+
+    const s = out.items;
+    try std.testing.expect(std.mem.indexOf(u8, s, "password=123") == null);
+    try std.testing.expect(std.mem.indexOf(u8, s, "bearer token") != null);
+    try std.testing.expect(std.mem.indexOf(u8, s, "admin") != null);
+}
+
+test "--find: empty pattern passes everything" {
+    const A = std.heap.page_allocator;
+    var cfg: types.Config = .{};
+    try cfg.addFindPattern(A, "");
+    defer cfg.deinit(A);
+
+    var out = std.ArrayList(u8).empty;
+    defer out.deinit(A);
+
+    const w = out.writer(A);
+    const Printer = emit.SafePrinter(@TypeOf(w));
+    const ctx = emit.Sink.Ctx{ .list = &out, .alloc = A };
+    var pr = Printer.init(&cfg, w, emit.Sink.sinkArrayList(&ctx));
+
+    try pr.emitAscii(0, 5, "Death is an amazing band");
+    try pr.emitAscii(0, 3, "I'm currently listening");
+
+    const s = out.items;
+    try std.testing.expect(std.mem.indexOf(u8, s, "Death is an amazing band") != null);
+    try std.testing.expect(std.mem.indexOf(u8, s, "I'm currently listening") != null);
+}
+
+test "find: pattern beyond cap_run_bytes is not visible to filter" {
+    const A = std.heap.page_allocator;
+    var cfg: types.Config = .{ .cap_run_bytes = 8 }; //keeping first 8 bytes only
+    try cfg.addFindPattern(A, "ZZ");
+    defer cfg.deinit(A);
+
+    var out = std.ArrayList(u8).empty;
+    defer out.deinit(A);
+
+    const w = out.writer(A);
+    const Printer = emit.SafePrinter(@TypeOf(w));
+    const ctx = emit.Sink.Ctx{ .list = &out, .alloc = A };
+    var pr = Printer.init(&cfg, w, emit.Sink.sinkArrayList(&ctx));
+
+    const txt = "aaaaaaaaZZ";
+    try pr.emitAscii(0, txt.len, txt);
+
+    //filter sees only first 8 bytes ("aaaaaaaa") due to cap -> drop
+    try std.testing.expectEqual(@as(usize, 0), out.items.len);
 }
