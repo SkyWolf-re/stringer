@@ -144,7 +144,7 @@ pub fn SafePrinter(comptime W: type) type {
             try writeIso8601(w);
             try w.writeAll("\",\n\"file\":\"");
             try jsonEscape(w, file_path);
-            try w.writeAll("\"\n}\n\"body\":[\n");
+            try w.writeAll("\"\n},\n\"body\":[\n");
 
             try self.flushLine(buf.items);
         }
@@ -169,16 +169,6 @@ pub fn SafePrinter(comptime W: type) type {
                     ms,
                 },
             );
-        }
-
-        fn writeJsonItem(self: *@This(), w: anytype, line: []const u8) !void {
-            const was_first = self.json_first.swap(false, .acq_rel);
-            if (!was_first) {
-                try w.writeAll(",\n");
-            }
-            //try w.writeAll(line);
-            //try w.writeByte('\n');
-            try self.flushLine(line);
         }
 
         fn jsonEscape(out: anytype, s: []const u8) !void {
@@ -213,6 +203,12 @@ pub fn SafePrinter(comptime W: type) type {
                 .utf16be => "utf16be",
             };
 
+            //prepend comma for all but the first item
+            const is_first = self.json_first.swap(false, .acq_rel);
+            if (!is_first) {
+                try w.writeByte(',');
+            }
+
             try w.writeByte('{');
             try w.writeAll("\"offset\":");
             try w.print("{}", .{offset});
@@ -224,7 +220,7 @@ pub fn SafePrinter(comptime W: type) type {
             try jsonEscape(w, text);
             try w.writeAll("\"}");
 
-            try self.writeJsonItem(w, buf.items);
+            try self.flushLine(buf.items);
         }
 
         fn writeTextLine(self: *@This(), offset: u64, kind: types.Kind, chars: usize, text: []const u8) !void {

@@ -100,10 +100,10 @@ JSON:
 "tool":"stringer",
 "time":"+2025-+10-+18T+1:+24:+32.+707Z",
 "file":"a.out"
-}
+},
 "body":[
 {"offset":8196,"kind":"ascii","len":12,"text":"Invalid key"}
-{"offset":8210,"kind":"utf16le","len":10,"text":"Hello, UI"}
+,{"offset":8210,"kind":"utf16le","len":10,"text":"Hello, UI"}
 ]
 }
 ```
