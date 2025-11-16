@@ -1,16 +1,16 @@
 //! types.zig
 //!
 //! Author: skywolf
-//! Date: 2025-09-28 | Last modified: 2025-10-23
+//! Date: 2025-09-28 | Last modified: 2025-11-16
 //!
 //! Canonical shared types for the string scanner
 //! - Defines the configuration struct (`Config`) with safe defaults and a
 //!   `validate()` routine to catch bad CLI inputs early
-//! - Defines the `Kind` enum (detector type) and the `Hit` metadata struct
+//! - Defines the `Kind` enum (detector type), Range enum and the `Hit` metadata struct
 //!   used by emitters/printers
 //! - No globals; all data passed explicitly to keep threading safe
 //! - Lazily create an arena in Config to own `find` patterns: duplicate the argv bytes into the arena
-//!   `addFindPattern` and store the slices in cfg.find (OR-semantics)
+//!   `addFindPattern` and `addRange` and store the slices in cfg.find (OR-semantics)
 //!
 //! Notes:
 //! - `offset` in `Hit` is a *file byte offset*, not RVA/VA
@@ -19,6 +19,8 @@
 const std = @import("std");
 
 pub const Kind = enum { ascii, utf16le, utf16be };
+
+pub const Range = struct { start: u64, end: u64 }; // [start, end)
 
 pub const Config = struct {
     min_len: usize = 2,
@@ -30,6 +32,7 @@ pub const Config = struct {
     null_only: bool = false,
     cap_run_bytes: usize = 4096,
     find: [][]const u8 = &.{},
+    ranges: []Range = &.{},
     _arena: ?*std.heap.ArenaAllocator = null,
 
     pub fn validate(self: *const Config) !void {
@@ -55,6 +58,15 @@ pub const Config = struct {
         var list = std.ArrayList([]const u8).fromOwnedSlice(self.find);
         try list.append(aa, copy);
         self.find = list.items;
+    }
+
+    pub fn addRange(self: *Config, alloc: std.mem.Allocator, r: Range) !void {
+        const arena = try self.ensureArena(alloc);
+        const aa = arena.allocator();
+
+        var list = std.ArrayList(Range).fromOwnedSlice(self.ranges);
+        try list.append(aa, r);
+        self.ranges = list.items; //arena-owned
     }
 
     pub fn deinit(self: *Config, parent: std.mem.Allocator) void {

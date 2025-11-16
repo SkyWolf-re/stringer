@@ -98,19 +98,43 @@ test "CLI: scan a real C source and a NUL-terminated binary" {
 
     const exe_path: []const u8 = build_options.stringer_bin;
 
-    std.debug.print("exe_path = {s}\n", .{exe_path});
-    const res = try runStringer(gpa, exe_path, &.{ "--json", "--min-len", "5", "--enc", "ascii", src_path });
+    // ---- extra CLI checks: -f + -r ----
+    const pat = "include";
 
-    if (res.code != 0) {
-        std.debug.print("stringer exited {d}\nstderr:\n{s}\nstdout:\n{s}\n", .{ res.code, res.stderr, res.stdout });
+    const pos_opt = std.mem.indexOf(u8, src_bytes, pat) orelse {
+        return error.TestFixtureMissingInclude;
+    };
+    const pos: usize = pos_opt;
+
+    var rbuf1: [64]u8 = undefined;
+    const spec_keep = try std.fmt.bufPrint(&rbuf1, "{d}+{d}", .{ pos, pat.len });
+    var rbuf2: [64]u8 = undefined;
+    const spec_drop = try std.fmt.bufPrint(&rbuf2, "0:{d}", .{pos});
+
+    std.debug.print("exe_path = {s}\n", .{exe_path});
+    const res_keep = try runStringer(gpa, exe_path, &.{ "--json", "-f", pat, "-r", spec_keep, "--min-len", "5", "--enc", "ascii", src_path });
+    if (res_keep.code != 0) {
+        std.debug.print("stringer exited {d}\nstderr:\n{s}\nstdout:\n{s}\n", .{ res_keep.code, res_keep.stderr, res_keep.stdout });
     }
     defer {
-        gpa.free(res.stdout);
-        gpa.free(res.stderr);
+        gpa.free(res_keep.stdout);
+        gpa.free(res_keep.stderr);
     }
-    try std.testing.expectEqual(@as(u8, 0), res.code);
-    try std.testing.expect(std.mem.indexOf(u8, res.stdout, "\"text\":\"include\"") != null);
-    try std.testing.expect(std.mem.indexOf(u8, res.stdout, "\"kind\":\"ascii\"") != null);
+
+    try std.testing.expectEqual(@as(u8, 0), res_keep.code);
+    try std.testing.expect(std.mem.indexOf(u8, res_keep.stdout, "\"text\":\"include\"") != null);
+
+    const res_drop = try runStringer(gpa, exe_path, &.{ "--json", "-f", pat, "-r", spec_drop, "--enc", "ascii", src_path });
+    if (res_drop.code != 0) {
+        std.debug.print("stringer exited {d}\nstderr:\n{s}\nstdout:\n{s}\n", .{ res_drop.code, res_drop.stderr, res_drop.stdout });
+    }
+    defer {
+        gpa.free(res_drop.stdout);
+        gpa.free(res_drop.stderr);
+    }
+
+    try std.testing.expectEqual(@as(u8, 0), res_drop.code);
+    try std.testing.expect(std.mem.indexOf(u8, res_drop.stdout, "\"text\":\"include\"") == null);
 
     //--------------------Real NUL-terminated strings in hello.bin--------------------------------
 

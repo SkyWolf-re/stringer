@@ -394,7 +394,7 @@ test "--find: empty pattern passes everything" {
     try std.testing.expect(std.mem.indexOf(u8, s, "I'm currently listening") != null);
 }
 
-test "find: pattern beyond cap_run_bytes is not visible to filter" {
+test "--find: pattern beyond cap_run_bytes is not visible to filter" {
     const A = std.heap.page_allocator;
     var cfg: types.Config = .{ .cap_run_bytes = 8 }; //keeping first 8 bytes only
     try cfg.addFindPattern(A, "ZZ");
@@ -413,4 +413,191 @@ test "find: pattern beyond cap_run_bytes is not visible to filter" {
 
     //filter sees only first 8 bytes ("aaaaaaaa") due to cap -> drop
     try std.testing.expectEqual(@as(usize, 0), out.items.len);
+}
+
+test "--range: ascii inside [start,end) is kept" {
+    const A = std.heap.page_allocator;
+    var cfg: types.Config = .{};
+    try cfg.addRange(A, .{ .start = 10, .end = 20 }); // [10,20)
+    defer cfg.deinit(A);
+
+    var out = std.ArrayList(u8).empty;
+    defer out.deinit(A);
+
+    const w = out.writer(A);
+    const Printer = emit.SafePrinter(@TypeOf(w));
+    const ctx = emit.Sink.Ctx{ .list = &out, .alloc = A };
+    var pr = Printer.init(&cfg, w, emit.Sink.sinkArrayList(&ctx));
+
+    try pr.emitAscii(12, 3, "hit"); // 12..15 -> inside -> keep
+    try pr.emitAscii(0, 5, "miss"); // 0..5   -> before -> drop
+
+    const s = out.items;
+    try std.testing.expect(std.mem.indexOf(u8, s, "hit") != null);
+    try std.testing.expect(std.mem.indexOf(u8, s, "miss") == null);
+}
+
+test "--range: ascii overlaps at left/right edge are kept" {
+    const A = std.heap.page_allocator;
+    var cfg: types.Config = .{};
+    try cfg.addRange(A, .{ .start = 10, .end = 20 }); // [10,20)
+    defer cfg.deinit(A);
+
+    var out = std.ArrayList(u8).empty;
+    defer out.deinit(A);
+
+    const w = out.writer(A);
+    const Printer = emit.SafePrinter(@TypeOf(w));
+    const ctx = emit.Sink.Ctx{ .list = &out, .alloc = A };
+    var pr = Printer.init(&cfg, w, emit.Sink.sinkArrayList(&ctx));
+
+    try pr.emitAscii(5, 10, "left-over");
+    // right-edge overlap
+    try pr.emitAscii(19, 6, "right!");
+
+    const s = out.items;
+    try std.testing.expect(std.mem.indexOf(u8, s, "left-over") != null);
+    try std.testing.expect(std.mem.indexOf(u8, s, "right!") != null);
+}
+
+test "--range: touching without overlap is dropped" {
+    const A = std.heap.page_allocator;
+    var cfg: types.Config = .{};
+    try cfg.addRange(A, .{ .start = 10, .end = 20 });
+    defer cfg.deinit(A);
+
+    var out = std.ArrayList(u8).empty;
+    defer out.deinit(A);
+
+    const w = out.writer(A);
+    const Printer = emit.SafePrinter(@TypeOf(w));
+    const ctx = emit.Sink.Ctx{ .list = &out, .alloc = A };
+    var pr = Printer.init(&cfg, w, emit.Sink.sinkArrayList(&ctx));
+
+    // 0..10 touches start (10) but does not overlap -> drop
+    try pr.emitAscii(0, 10, "touch-a");
+    // 20..25 touches end (20) but does not overlap -> drop
+    try pr.emitAscii(20, 5, "touch-b");
+
+    try std.testing.expectEqual(@as(usize, 0), out.items.len);
+}
+
+test "--range: union of multiple ranges" {
+    const A = std.heap.page_allocator;
+    var cfg: types.Config = .{};
+    try cfg.addRange(A, .{ .start = 100, .end = 110 });
+    try cfg.addRange(A, .{ .start = 200, .end = 205 });
+    defer cfg.deinit(A);
+
+    var out = std.ArrayList(u8).empty;
+    defer out.deinit(A);
+
+    const w = out.writer(A);
+    const Printer = emit.SafePrinter(@TypeOf(w));
+    const ctx = emit.Sink.Ctx{ .list = &out, .alloc = A };
+    var pr = Printer.init(&cfg, w, emit.Sink.sinkArrayList(&ctx));
+
+    try pr.emitAscii(102, 3, "r1"); // keep
+    try pr.emitAscii(202, 1, "r2"); // keep
+    try pr.emitAscii(150, 2, "xx"); // drop
+
+    const s = out.items;
+    try std.testing.expect(std.mem.indexOf(u8, s, "r1") != null);
+    try std.testing.expect(std.mem.indexOf(u8, s, "r2") != null);
+    try std.testing.expect(std.mem.indexOf(u8, s, "xx") == null);
+}
+
+//AND with -f: must be in-range AND match pattern
+test "--range + find: both conditions required" {
+    const A = std.heap.page_allocator;
+    var cfg: types.Config = .{};
+    try cfg.addRange(A, .{ .start = 50, .end = 60 });
+    try cfg.addFindPattern(A, "hit");
+    defer cfg.deinit(A);
+
+    var out = std.ArrayList(u8).empty;
+    defer out.deinit(A);
+
+    const w = out.writer(A);
+    const Printer = emit.SafePrinter(@TypeOf(w));
+    const ctx = emit.Sink.Ctx{ .list = &out, .alloc = A };
+    var pr = Printer.init(&cfg, w, emit.Sink.sinkArrayList(&ctx));
+
+    try pr.emitAscii(55, 6, "xxhitx"); // in-range + match -> keep
+    try pr.emitAscii(30, 6, "xxhitx"); // out-of-range + match -> drop
+    try pr.emitAscii(55, 6, "miss!!"); // in-range + no match -> drop
+
+    const s = out.items;
+    try std.testing.expect(std.mem.indexOf(u8, s, "xxhitx") != null);
+    try std.testing.expect(std.mem.indexOf(u8, s, "miss!!") == null);
+}
+
+test "--range: utf16le overlap uses 2 bytes per unit" {
+    const A = std.heap.page_allocator;
+    var cfg: types.Config = .{};
+    try cfg.addRange(A, .{ .start = 20, .end = 30 });
+    defer cfg.deinit(A);
+
+    var out = std.ArrayList(u8).empty;
+    defer out.deinit(A);
+
+    const w = out.writer(A);
+    const Printer = emit.SafePrinter(@TypeOf(w));
+    const ctx = emit.Sink.Ctx{ .list = &out, .alloc = A };
+    var pr = Printer.init(&cfg, w, emit.Sink.sinkArrayList(&ctx));
+
+    const yes = [_]u8{ 'h', 0, 'i', 0 }; // 2 UTF-16LE units
+    const no = [_]u8{ 'x', 0 }; // 1 unit
+
+    try pr.emitUtf16le(18, yes.len / 2, &yes); // 18..22 -> keep
+    try pr.emitUtf16le(10, no.len / 2, &no); // 10..12 -> drop
+
+    const s = out.items;
+    try std.testing.expect(std.mem.indexOf(u8, s, "hi") != null);
+    try std.testing.expect(std.mem.indexOf(u8, s, "x") == null);
+}
+
+test "--range: cap_run_bytes doesn't break overlap check" {
+    const A = std.heap.page_allocator;
+    var cfg: types.Config = .{ .cap_run_bytes = 4 }; // will cap printed payload to 4 bytes
+    try cfg.addRange(A, .{ .start = 0, .end = 8 });
+    defer cfg.deinit(A);
+
+    var out = std.ArrayList(u8).empty;
+    defer out.deinit(A);
+
+    const w = out.writer(A);
+    const Printer = emit.SafePrinter(@TypeOf(w));
+    const ctx = emit.Sink.Ctx{ .list = &out, .alloc = A };
+    var pr = Printer.init(&cfg, w, emit.Sink.sinkArrayList(&ctx));
+
+    const big = "ABCDEFGH"; // 8 bytes; off=0, bytes=8 -> in-range
+    try pr.emitAscii(0, big.len, big);
+
+    const s = out.items;
+    // We should see only the first 4 bytes due to cap, but line must exist
+    try std.testing.expect(std.mem.indexOf(u8, s, "ABCD") != null);
+}
+
+test "--range: open-ended to EOF" {
+    const A = std.heap.page_allocator;
+    var cfg: types.Config = .{};
+    try cfg.addRange(A, .{ .start = 1000, .end = std.math.maxInt(u64) });
+    defer cfg.deinit(A);
+
+    var out = std.ArrayList(u8).empty;
+    defer out.deinit(A);
+
+    // I really should make a single function for printer init
+    const w = out.writer(A);
+    const Printer = emit.SafePrinter(@TypeOf(w));
+    const ctx = emit.Sink.Ctx{ .list = &out, .alloc = A };
+    var pr = Printer.init(&cfg, w, emit.Sink.sinkArrayList(&ctx));
+
+    try pr.emitAscii(2000, 4, "okok"); // keep
+    try pr.emitAscii(999, 1, "x"); // drop (999..1000, no overlap)
+
+    const s = out.items;
+    try std.testing.expect(std.mem.indexOf(u8, s, "okok") != null);
+    try std.testing.expect(std.mem.indexOf(u8, s, "x") == null);
 }

@@ -1,13 +1,15 @@
 //! emit.zig
 //!
 //! Author: skywolf
-//! Date: 2025-09-27 | Last modified: 2025-10-23
+//! Date: 2025-09-27 | Last modified: 2025-11-16
 //!
 //! Thread-safe printers for text and JSON lines
 //! - `SafePrinter` wraps any <Writer> with a mutex & pointer to a specific writer destination
 //! - ASCII emits bytes as-is (escaped for text mode)
 //! - UTF-16LE emitter decodes ASCII-range code units to 1-byte UTF-8
 //! - if `find` option is set, SafePrinter will only write the specific string based on `pass` function condition
+// - if 'range' option is set, SafePrinter only writes strings whose [offset, offset+bytes) overlaps any configured range
+//   (both 'find' and 'range' must pass for a string to be emitted)
 //!
 //! Notes:
 //! - We build each line in a temporary buffer, then lock only for the final write
@@ -113,6 +115,17 @@ pub fn SafePrinter(comptime W: type) type {
             defer self.lock.unlock();
             try self.sink.writeAll(line);
             try self.sink.writeByte('\n');
+        }
+
+        fn inAnyRange(self: *const @This(), off: u64, file_bytes: usize) bool {
+            const ranges = self.cfg.ranges;
+            if (ranges.len == 0) return true; // no -r → full pass
+            const end_off = off + @as(u64, @intCast(file_bytes));
+            for (ranges) |r| {
+                // overlap if start < end_off && off < end
+                if (r.start < end_off and off < r.end) return true;
+            }
+            return false;
         }
 
         //--------------------------------JSON ---------------------------------------------------------------
@@ -261,6 +274,10 @@ pub fn SafePrinter(comptime W: type) type {
         //-----------------------------------------Public emit API ----------------------------------------------------
 
         pub fn emitAscii(self: *@This(), offset: u64, chars: usize, ascii_bytes: []const u8) !void {
+
+            //cap applied in caller -> bytes on disk == payload.len
+            if (!self.inAnyRange(offset, ascii_bytes.len)) return;
+
             const payload = if (ascii_bytes.len > self.cfg.cap_run_bytes) ascii_bytes[0..self.cfg.cap_run_bytes] else ascii_bytes;
             if (self.cfg.json)
                 try self.writeJsonLine(offset, .ascii, chars, payload)
@@ -283,6 +300,8 @@ pub fn SafePrinter(comptime W: type) type {
                 emitted += 1;
                 if (out.items.len == self.cfg.cap_run_bytes) break;
             }
+
+            if (!self.inAnyRange(offset, emitted * 2)) return;
 
             if (self.cfg.json)
                 try self.writeJsonLine(offset, .utf16le, emitted, out.items)

@@ -6,11 +6,11 @@ A fast, cross-platform string extractor written in Zig. Scans memory-mapped file
 
 ## Downloads
 
-| Linux x86_64 (glibc) -> [stringer-1.0.0-x86_64-linux-gnu.tar.gz](https://github.com/Skywolf-re/stringer/releases/latest/download/stringer-1.0.0-x86_64-linux-gnu.tar.gz) |  
-| Linux x86_64 (musl) -> [stringer-1.0.0-x86_64-linux-musl.tar.gz](https://github.com/Skywolf-re/stringer/releases/latest/download/stringer-1.0.0-x86_64-linux-musl.tar.gz) |  
-| Linux aarch64 (musl) -> [stringer-1.0.0-aarch64-linux-musl.tar.gz](https://github.com/Skywolf-re/stringer/releases/latest/download/stringer-1.0.0-aarch64-linux-musl.tar.gz) |  
-| macOS arm64 -> [stringer-1.0.0-aarch64-macos.tar.gz](https://github.com/Skywolf-re/stringer/releases/latest/download/stringer-1.0.0-aarch64-macos.tar.gz) |  
-| macOS x86_64 -> [stringer-1.0.0-x86_64-macos.tar.gz](https://github.com/Skywolf-re/stringer/releases/latest/download/stringer-1.0.0-x86_64-macos.tar.gz) |  
+| Linux x86_64 (glibc) -> [stringer-1.1.0-x86_64-linux-gnu.tar.gz](https://github.com/Skywolf-re/stringer/releases/latest/download/stringer-1.0.0-x86_64-linux-gnu.tar.gz) |  
+| Linux x86_64 (musl) -> [stringer-1.1.0-x86_64-linux-musl.tar.gz](https://github.com/Skywolf-re/stringer/releases/latest/download/stringer-1.0.0-x86_64-linux-musl.tar.gz) |  
+| Linux aarch64 (musl) -> [stringer-1.1.0-aarch64-linux-musl.tar.gz](https://github.com/Skywolf-re/stringer/releases/latest/download/stringer-1.0.0-aarch64-linux-musl.tar.gz) |  
+| macOS arm64 -> [stringer-1.1.0-aarch64-macos.tar.gz](https://github.com/Skywolf-re/stringer/releases/latest/download/stringer-1.0.0-aarch64-macos.tar.gz) |  
+| macOS x86_64 -> [stringer-1.1.0-x86_64-macos.tar.gz](https://github.com/Skywolf-re/stringer/releases/latest/download/stringer-1.0.0-x86_64-macos.tar.gz) |  
 
 --- 
 
@@ -47,6 +47,8 @@ Per-hit offset, type, and length
 --min-len threshold (default 5)
 
 Multi-threaded chunk scan with boundary overlap
+
+Range and find patterns for scopes analysis
 
 ---
 
@@ -120,6 +122,7 @@ Options:
   --null-only, -n       Require \0 / 0x0000 terminator before emit
   --cap-run-bytes N, -c Truncate very long runs (default {d})
   --find, -f (xN)       Find the exact string match. Can be repeated
+  --range, -r           Find strings in a selected scope of offbytes. Can be repeated as OR
   --version, -v         Print version and exit
   --help, -h            Show help
 ```
