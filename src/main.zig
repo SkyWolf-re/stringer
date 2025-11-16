@@ -214,7 +214,7 @@ fn parseArgs(alloc: std.mem.Allocator) !Parsed {
             try cfg.addRange(alloc, r);
         },
         .version, .v_version => {
-            std.debug.print("stringer 1.1.0\n", .{});
+            std.debug.print("stringer 1.2.0\n", .{});
             std.process.exit(0);
         },
         .help, .h_help => {
