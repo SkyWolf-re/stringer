@@ -1,7 +1,7 @@
 //! main.zig
 //!
 //! Author: skywolf
-//! Date: 2025-09-28 | Last modified: 2025-10-23
+//! Date: 2025-09-28 | Last modified: 2025-11-16
 //!
 //! Orchestrates the string scanner CLI
 //! - Parses flags into `Config`, validates inputs
@@ -39,6 +39,7 @@ const Opt = enum {
     null_only,
     cap_run_bytes,
     find,
+    range,
     version,
     help,
     // short aliases
@@ -49,6 +50,7 @@ const Opt = enum {
     n_null_only,
     c_cap_run_bytes,
     f_find,
+    r_range,
     v_version,
     h_help,
     // meta
@@ -65,6 +67,7 @@ const OPTS = std.StaticStringMap(Opt).initComptime(.{
     .{ "--null-only", .null_only },
     .{ "--cap-run-bytes", .cap_run_bytes },
     .{ "--find", .find },
+    .{ "--range", .range },
     .{ "--version", .version },
     .{ "--help", .help },
     // short
@@ -75,6 +78,7 @@ const OPTS = std.StaticStringMap(Opt).initComptime(.{
     .{ "-n", .n_null_only },
     .{ "-c", .c_cap_run_bytes },
     .{ "-f", .f_find },
+    .{ "-r", .r_range },
     .{ "-v", .v_version },
     .{ "-h", .h_help },
 });
@@ -129,6 +133,9 @@ fn printHelp() void {
 
     // --find / -f
     std.debug.print("  --find, -f 'str'     Find the exact string match. Can be repeated as OR\n", .{});
+
+    // --rage / -r
+    std.debug.print("  --range, -r          Find strings in a selected scope of offbytes. Can be repeated as OR\n", .{});
 
     // --help / --version
     std.debug.print("  --version            Print version and exit\n", .{});
@@ -201,8 +208,13 @@ fn parseArgs(alloc: std.mem.Allocator) !Parsed {
             const v = it.next() orelse return error.MissingFindPattern;
             try cfg.addFindPattern(alloc, v); // owns a copy in cfg’s arena
         },
+        .range, .r_range => {
+            const spec = it.next() orelse return error.MissingRangeSpec;
+            const r = try parseRangeSpec(spec);
+            try cfg.addRange(alloc, r);
+        },
         .version, .v_version => {
-            std.debug.print("stringer 1.1.0\n", .{});
+            std.debug.print("stringer 1.2.0\n", .{});
             std.process.exit(0);
         },
         .help, .h_help => {
@@ -256,6 +268,41 @@ fn matchAny(hay: []const u8, pats: [][]const u8) bool {
         if (p.len == 0 or std.mem.indexOf(u8, hay, p) != null) return true;
     }
     return false;
+}
+
+//---------------------Range helpers----------------------------------
+
+fn isHexPref(s: []const u8) bool {
+    return s.len >= 2 and (s[0] == '0') and (s[1] == 'x' or s[1] == 'X');
+}
+
+fn parseNumU64(s: []const u8) !u64 {
+    if (s.len == 0) return error.BadNumber;
+    if (isHexPref(s)) return try std.fmt.parseInt(u64, s[2..], 16);
+    return try std.fmt.parseInt(u64, s, 10);
+}
+
+fn parseRangeSpec(spec: []const u8) !types.Range {
+    // try start+len
+    if (std.mem.indexOfScalar(u8, spec, '+')) |p| {
+        const a = std.mem.trim(u8, spec[0..p], " \t");
+        const b = std.mem.trim(u8, spec[p + 1 ..], " \t");
+        const start = try parseNumU64(a);
+        const len = try parseNumU64(b);
+        return .{ .start = start, .end = start + len };
+    }
+    // start:end (either side may be empty)
+    if (std.mem.indexOfScalar(u8, spec, ':')) |p| {
+        const ls = std.mem.trim(u8, spec[0..p], " \t");
+        const rs = std.mem.trim(u8, spec[p + 1 ..], " \t");
+        const start: u64 = if (ls.len == 0) 0 else try parseNumU64(ls);
+        const end: u64 = if (rs.len == 0) std.math.maxInt(u64) else try parseNumU64(rs);
+        if (end < start) return error.BadRange;
+        return .{ .start = start, .end = end };
+    }
+    // single number? treat as start: (to EOF)
+    const start = try parseNumU64(spec);
+    return .{ .start = start, .end = std.math.maxInt(u64) };
 }
 
 //-------------------------------------Worker orchestration---------------------------------------------------------

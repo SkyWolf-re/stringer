@@ -1,13 +1,15 @@
 //! emit.zig
 //!
 //! Author: skywolf
-//! Date: 2025-09-27 | Last modified: 2025-10-23
+//! Date: 2025-09-27 | Last modified: 2025-11-16
 //!
 //! Thread-safe printers for text and JSON lines
 //! - `SafePrinter` wraps any <Writer> with a mutex & pointer to a specific writer destination
 //! - ASCII emits bytes as-is (escaped for text mode)
 //! - UTF-16LE emitter decodes ASCII-range code units to 1-byte UTF-8
 //! - if `find` option is set, SafePrinter will only write the specific string based on `pass` function condition
+// - if 'range' option is set, SafePrinter only writes strings whose [offset, offset+bytes) overlaps any configured range
+//   (both 'find' and 'range' must pass for a string to be emitted)
 //!
 //! Notes:
 //! - We build each line in a temporary buffer, then lock only for the final write
@@ -115,6 +117,17 @@ pub fn SafePrinter(comptime W: type) type {
             try self.sink.writeByte('\n');
         }
 
+        fn inAnyRange(self: *const @This(), off: u64, file_bytes: usize) bool {
+            const ranges = self.cfg.ranges;
+            if (ranges.len == 0) return true; // no -r → full pass
+            const end_off = off + @as(u64, @intCast(file_bytes));
+            for (ranges) |r| {
+                // overlap if start < end_off && off < end
+                if (r.start < end_off and off < r.end) return true;
+            }
+            return false;
+        }
+
         //--------------------------------JSON ---------------------------------------------------------------
 
         //public main write-once
@@ -131,7 +144,7 @@ pub fn SafePrinter(comptime W: type) type {
             try writeIso8601(w);
             try w.writeAll("\",\n\"file\":\"");
             try jsonEscape(w, file_path);
-            try w.writeAll("\"\n}\n\"body\":[\n");
+            try w.writeAll("\"\n},\n\"body\":[\n");
 
             try self.flushLine(buf.items);
         }
@@ -156,16 +169,6 @@ pub fn SafePrinter(comptime W: type) type {
                     ms,
                 },
             );
-        }
-
-        fn writeJsonItem(self: *@This(), w: anytype, line: []const u8) !void {
-            const was_first = self.json_first.swap(false, .acq_rel);
-            if (!was_first) {
-                try w.writeAll(",\n");
-            }
-            //try w.writeAll(line);
-            //try w.writeByte('\n');
-            try self.flushLine(line);
         }
 
         fn jsonEscape(out: anytype, s: []const u8) !void {
@@ -200,6 +203,12 @@ pub fn SafePrinter(comptime W: type) type {
                 .utf16be => "utf16be",
             };
 
+            //prepend comma for all but the first item
+            const is_first = self.json_first.swap(false, .acq_rel);
+            if (!is_first) {
+                try w.writeByte(',');
+            }
+
             try w.writeByte('{');
             try w.writeAll("\"offset\":");
             try w.print("{}", .{offset});
@@ -211,7 +220,7 @@ pub fn SafePrinter(comptime W: type) type {
             try jsonEscape(w, text);
             try w.writeAll("\"}");
 
-            try self.writeJsonItem(w, buf.items);
+            try self.flushLine(buf.items);
         }
 
         fn writeTextLine(self: *@This(), offset: u64, kind: types.Kind, chars: usize, text: []const u8) !void {
@@ -261,6 +270,10 @@ pub fn SafePrinter(comptime W: type) type {
         //-----------------------------------------Public emit API ----------------------------------------------------
 
         pub fn emitAscii(self: *@This(), offset: u64, chars: usize, ascii_bytes: []const u8) !void {
+
+            //cap applied in caller -> bytes on disk == payload.len
+            if (!self.inAnyRange(offset, ascii_bytes.len)) return;
+
             const payload = if (ascii_bytes.len > self.cfg.cap_run_bytes) ascii_bytes[0..self.cfg.cap_run_bytes] else ascii_bytes;
             if (self.cfg.json)
                 try self.writeJsonLine(offset, .ascii, chars, payload)
@@ -283,6 +296,8 @@ pub fn SafePrinter(comptime W: type) type {
                 emitted += 1;
                 if (out.items.len == self.cfg.cap_run_bytes) break;
             }
+
+            if (!self.inAnyRange(offset, emitted * 2)) return;
 
             if (self.cfg.json)
                 try self.writeJsonLine(offset, .utf16le, emitted, out.items)
