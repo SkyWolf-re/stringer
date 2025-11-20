@@ -2,7 +2,9 @@
 [![Downloads](https://img.shields.io/github/downloads/SkyWolf-re/stringer/total.svg)](https://github.com/SkyWolf-re/stringer/releases)
 # stringer
 
-A fast, cross-platform string extractor written in Zig. Scans memory-mapped files for ASCII/UTF-8 (ASCII subset) and UTF-16 (LE/BE) strings with multi-threaded chunking and deterministic output.
+A fast, cross-platform string extractor written in Zig. Scans memory-mapped files for ASCII/UTF-8 (ASCII subset) and UTF-16 (LE/BE) strings with multi-threaded chunking and deterministic output.  
+
+Part of the REVenge FMREF ecosystem – pluggable reverse engineering tools  
 
 ## Downloads
 
